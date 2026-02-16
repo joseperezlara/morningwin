@@ -380,23 +380,7 @@ export default function App() {
     if (user) {
       firebaseService.getProgress(user.uid).then((userProgress) => {
         if (userProgress) {
-          setStreak(userProgress.streak || 0);
-          setBestStreak(userProgress.bestStreak || 0);
-          setCompletedDays(userProgress.completedDays || []);
-          setReminderTime(userProgress.reminderTime || '6:00 AM');
-          setNotificationsEnabled(userProgress.notificationsEnabled !== false);
-          setSoundEnabled(userProgress.soundEnabled !== false);
-          
-          if (userProgress.customTasks && userProgress.customTasks.length > 0) {
-            const sortedTasks = userProgress.customTasks
-              .sort((a, b) => (a.order || 0) - (b.order || 0))
-              .map(task => ({ ...task, completed: false }));
-            setTasks(sortedTasks);
-          }
-          
-          if (userProgress.onboardingCompleted) {
-            setOnboardingComplete(true);
-          }
+          loadUserData(userProgress);
         }
       });
     }
@@ -597,8 +581,11 @@ export default function App() {
   };
 
   const openEditRoutine = () => {
-    setEditingTasks(JSON.parse(JSON.stringify(tasks)));
+    console.log('openEditRoutine called');
+    const clonedTasks = JSON.parse(JSON.stringify(tasks));
+    setEditingTasks(clonedTasks);
     setShowEditModal(true);
+    console.log('showEditModal set to true');
   };
 
   const saveEditedRoutine = async () => {
@@ -621,6 +608,7 @@ export default function App() {
 
     setTasks(editingTasks.map(t => ({ ...t, completed: false })));
     setShowEditModal(false);
+    setNewTaskTitle('');
     Alert.alert('Éxito', 'Tu rutina ha sido actualizada');
   };
 
@@ -750,6 +738,108 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </View>
+      </View>
+    </Modal>
+  );
+
+  // ==================== EDIT ROUTINE MODAL ====================
+  const EditRoutineModal = () => (
+    <Modal
+      visible={showEditModal}
+      transparent={false}
+      animationType="slide"
+      onRequestClose={() => setShowEditModal(false)}
+    >
+      <View style={styles.editModalContainer}>
+        <ScrollView style={styles.editModalScroll}>
+          <View style={styles.editModalHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <Text style={styles.editModalBackButton}>← Atrás</Text>
+            </TouchableOpacity>
+            <Text style={styles.editModalTitle}>✏️ Editar Mi Rutina</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <View style={styles.editModalContent}>
+            <Text style={styles.editSectionTitle}>Mis Tareas</Text>
+
+            <View style={styles.tasksEditList}>
+              {editingTasks.map((task, index) => (
+                <View key={task.id} style={styles.editTaskItem}>
+                  <View style={styles.editTaskInfo}>
+                    <Text style={styles.editTaskIndex}>{index + 1}.</Text>
+                    <TextInput
+                      style={styles.editTaskInput}
+                      value={task.title}
+                      onChangeText={(text) => updateTaskTitle(task.id, text)}
+                      placeholder="Nombre de la tarea"
+                      placeholderTextColor="#ccc"
+                    />
+                  </View>
+
+                  <View style={styles.editTaskButtons}>
+                    <TouchableOpacity
+                      style={[styles.editArrowButton, index === 0 && styles.editArrowButtonDisabled]}
+                      onPress={() => moveTaskUp(index)}
+                      disabled={index === 0}
+                    >
+                      <Text style={styles.editArrowText}>↑</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.editArrowButton, index === editingTasks.length - 1 && styles.editArrowButtonDisabled]}
+                      onPress={() => moveTaskDown(index)}
+                      disabled={index === editingTasks.length - 1}
+                    >
+                      <Text style={styles.editArrowText}>↓</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.editDeleteButton}
+                      onPress={() => deleteTask(task.id)}
+                    >
+                      <Text style={styles.editDeleteText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.editSectionTitle}>Agregar Nueva Tarea</Text>
+
+            <View style={styles.addTaskContainer}>
+              <TextInput
+                style={styles.addTaskInput}
+                placeholder="Escribe una nueva tarea"
+                value={newTaskTitle}
+                onChangeText={setNewTaskTitle}
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity
+                style={styles.addTaskButton}
+                onPress={addNewTask}
+              >
+                <Text style={styles.addTaskButtonText}>+ Agregar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.editModalButtons}>
+              <TouchableOpacity
+                style={styles.editSaveButton}
+                onPress={saveEditedRoutine}
+              >
+                <Text style={styles.editSaveButtonText}>✅ Guardar Cambios</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.editCancelButton}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.editCancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -910,6 +1000,103 @@ export default function App() {
             </TouchableOpacity>
           </View>
         )}
+      </View>
+    );
+  }
+
+// ==================== EDIT ROUTINE SCREEN ====================
+  if (showEditModal) {
+    return (
+      <View style={styles.editScreenContainer}>
+        <ScrollView style={styles.editScreenScroll}>
+          <View style={styles.editScreenHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <Text style={styles.editScreenBackButton}>← Atrás</Text>
+            </TouchableOpacity>
+            <Text style={styles.editScreenTitle}>✏️ Editar Mi Rutina</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <View style={styles.editScreenContent}>
+            <Text style={styles.editSectionTitle}>Mis Tareas</Text>
+
+            <View style={styles.tasksEditList}>
+              {editingTasks.map((task, index) => (
+                <View key={task.id} style={styles.editTaskItem}>
+                  <View style={styles.editTaskInfo}>
+                    <Text style={styles.editTaskIndex}>{index + 1}.</Text>
+                    <TextInput
+                      style={styles.editTaskInput}
+                      value={task.title}
+                      onChangeText={(text) => updateTaskTitle(task.id, text)}
+                      placeholder="Nombre de la tarea"
+                      placeholderTextColor="#ccc"
+                    />
+                  </View>
+
+                  <View style={styles.editTaskButtons}>
+                    <TouchableOpacity
+                      style={[styles.editArrowButton, index === 0 && styles.editArrowButtonDisabled]}
+                      onPress={() => moveTaskUp(index)}
+                      disabled={index === 0}
+                    >
+                      <Text style={styles.editArrowText}>↑</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.editArrowButton, index === editingTasks.length - 1 && styles.editArrowButtonDisabled]}
+                      onPress={() => moveTaskDown(index)}
+                      disabled={index === editingTasks.length - 1}
+                    >
+                      <Text style={styles.editArrowText}>↓</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.editDeleteButton}
+                      onPress={() => deleteTask(task.id)}
+                    >
+                      <Text style={styles.editDeleteText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.editSectionTitle}>Agregar Nueva Tarea</Text>
+
+            <View style={styles.addTaskContainer}>
+              <TextInput
+                style={styles.addTaskInput}
+                placeholder="Escribe una nueva tarea"
+                value={newTaskTitle}
+                onChangeText={setNewTaskTitle}
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity
+                style={styles.addTaskButton}
+                onPress={addNewTask}
+              >
+                <Text style={styles.addTaskButtonText}>+ Agregar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.editScreenButtons}>
+              <TouchableOpacity
+                style={styles.editSaveButton}
+                onPress={saveEditedRoutine}
+              >
+                <Text style={styles.editSaveButtonText}>✅ Guardar Cambios</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.editCancelButton}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.editCancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -1108,103 +1295,7 @@ export default function App() {
     );
   }
 
-// ==================== EDIT ROUTINE SCREEN ====================
-  if (showEditModal) {
-    return (
-      <View style={styles.editModalContainer}>
-        <ScrollView style={styles.editModalScroll}>
-          <View style={styles.editModalHeader}>
-            <TouchableOpacity onPress={() => setShowEditModal(false)}>
-              <Text style={styles.editModalBackButton}>← Atrás</Text>
-            </TouchableOpacity>
-            <Text style={styles.editModalTitle}>✏️ Editar Mi Rutina</Text>
-            <View style={{ width: 60 }} />
-          </View>
-
-          <View style={styles.editModalContent}>
-            <Text style={styles.editSectionTitle}>Mis Tareas</Text>
-
-            <View style={styles.tasksEditList}>
-              {editingTasks.map((task, index) => (
-                <View key={task.id} style={styles.editTaskItem}>
-                  <View style={styles.editTaskInfo}>
-                    <Text style={styles.editTaskIndex}>{index + 1}.</Text>
-                    <TextInput
-                      style={styles.editTaskInput}
-                      value={task.title}
-                      onChangeText={(text) => updateTaskTitle(task.id, text)}
-                      placeholder="Nombre de la tarea"
-                    />
-                  </View>
-
-                  <View style={styles.editTaskButtons}>
-                    <TouchableOpacity
-                      style={styles.editArrowButton}
-                      onPress={() => moveTaskUp(index)}
-                      disabled={index === 0}
-                    >
-                      <Text style={styles.editArrowText}>↑</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.editArrowButton}
-                      onPress={() => moveTaskDown(index)}
-                      disabled={index === editingTasks.length - 1}
-                    >
-                      <Text style={styles.editArrowText}>↓</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.editDeleteButton}
-                      onPress={() => deleteTask(task.id)}
-                    >
-                      <Text style={styles.editDeleteText}>🗑️</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-
-            <Text style={styles.editSectionTitle}>Agregar Nueva Tarea</Text>
-
-            <View style={styles.addTaskContainer}>
-              <TextInput
-                style={styles.addTaskInput}
-                placeholder="Escribe una nueva tarea"
-                value={newTaskTitle}
-                onChangeText={setNewTaskTitle}
-                placeholderTextColor="#999"
-              />
-              <TouchableOpacity
-                style={styles.addTaskButton}
-                onPress={addNewTask}
-              >
-                <Text style={styles.addTaskButtonText}>+ Agregar</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.editModalButtons}>
-              <TouchableOpacity
-                style={styles.editSaveButton}
-                onPress={saveEditedRoutine}
-              >
-                <Text style={styles.editSaveButtonText}>✅ Guardar Cambios</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.editCancelButton}
-                onPress={() => setShowEditModal(false)}
-              >
-                <Text style={styles.editCancelButtonText}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-// ==================== HOME SCREEN ====================
+  // ==================== HOME SCREEN ====================
   return (
     <>
       <ScrollView style={styles.container}>
@@ -1295,6 +1386,7 @@ export default function App() {
       </ScrollView>
 
       <CoachModal />
+      <EditRoutineModal />
     </>
   );
 }
@@ -1350,7 +1442,7 @@ const styles = StyleSheet.create({
   checkmark: { color: '#000', fontSize: 16, fontWeight: 'bold' },
   taskText: { fontSize: 16, color: '#333', flex: 1, fontWeight: '500' },
   taskTextCompleted: { color: '#999', textDecorationLine: 'line-through' },
-  taskDisabled: { opacity: 0.5, pointerEvents: 'none', cursor: 'not-allowed' },
+  taskDisabled: { opacity: 0.5, pointerEvents: 'none' },
   completeButton: { paddingVertical: 18, paddingHorizontal: 20, backgroundColor: '#f0f0f0', borderRadius: 12, alignItems: 'center', marginBottom: 30 },
   completeButtonActive: { backgroundColor: '#000' },
   completeButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
@@ -1420,6 +1512,7 @@ const styles = StyleSheet.create({
   editTaskInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, backgroundColor: '#fff' },
   editTaskButtons: { flexDirection: 'row', gap: 8 },
   editArrowButton: { paddingHorizontal: 8, paddingVertical: 8, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
+  editArrowButtonDisabled: { opacity: 0.5 },
   editArrowText: { fontSize: 14, fontWeight: '700', color: '#000' },
   editDeleteButton: { paddingHorizontal: 8, paddingVertical: 8, backgroundColor: '#ffebee', borderRadius: 8 },
   editDeleteText: { fontSize: 14 },
@@ -1432,4 +1525,11 @@ const styles = StyleSheet.create({
   editSaveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   editCancelButton: { width: '100%', paddingVertical: 14, backgroundColor: '#f5f5f5', borderRadius: 12, alignItems: 'center', borderWidth: 2, borderColor: '#ddd' },
   editCancelButtonText: { color: '#000', fontSize: 16, fontWeight: '700' },
+  editScreenContainer: { flex: 1, backgroundColor: '#fff' },
+  editScreenScroll: { flex: 1 },
+  editScreenHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 30, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  editScreenBackButton: { fontSize: 16, color: '#000', fontWeight: '600' },
+  editScreenTitle: { fontSize: 20, fontWeight: '700', color: '#000' },
+  editScreenContent: { paddingHorizontal: 20, paddingVertical: 20 },
+  editScreenButtons: { flexDirection: 'column', gap: 12, marginTop: 20, marginBottom: 30 },
 });

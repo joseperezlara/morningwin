@@ -1,19 +1,36 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Switch, Alert, Modal, ActivityIndicator, Share } from 'react-native';
 
-// ==================== CONFIG ====================
-const firebaseConfig = {
-  apiKey: "AIzaSyCesd8LVdz5B28UFHGo-elEwo49w2YeQ2Q",
-  authDomain: "morningwin-app.firebaseapp.com",
-  projectId: "morningwin-app",
-  storageBucket: "morningwin-app.firebasestorage.app",
-  messagingSenderId: "9567774119 2",
-  appId: "1:9567774119:web:8000c332debda5a442c73d",
-  measurementId: "G-2I7L4EES8C"
-};
-
-const REVENUECAT_API_KEY = 'test_QPUVLUQe4tB3msCZnj0dqLwPXz0f';
 const CLAUDE_API_KEY = process.env.REACT_APP_CLAUDE_API_KEY || 'fallback-key-for-demo';
+
+// ==================== NOTIFICATION SERVICE ====================
+class NotificationService {
+  constructor() {
+    this.requestPermission();
+  }
+
+  requestPermission() {
+    if ('Notification' in window) {
+      if (Notification.permission === 'granted') {
+        console.log('Notificaciones habilitadas');
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+    }
+  }
+
+  sendNotification(title, options = {}) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      return new Notification(title, {
+        icon: '🔥',
+        badge: '🔥',
+        ...options
+      });
+    }
+  }
+}
+
+const notificationService = new NotificationService();
 
 // ==================== FIREBASE SERVICE ====================
 class FirebaseService {
@@ -34,28 +51,17 @@ class FirebaseService {
 
   isValidEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    
-    if (!emailRegex.test(email)) {
-      return false;
-    }
+    if (!emailRegex.test(email)) return false;
 
     const fakeDomains = ['yomero.com', 'test.com', 'example.com', 'fake.com'];
     const domain = email.split('@')[1].toLowerCase();
-    
-    if (fakeDomains.includes(domain)) {
-      return false;
-    }
+    if (fakeDomains.includes(domain)) return false;
 
     const validDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
-    
-    if (validDomains.includes(domain)) {
-      return true;
-    }
+    if (validDomains.includes(domain)) return true;
 
     const beforeAt = email.split('@')[0];
-    if (beforeAt.length < 2 || domain.length < 5) {
-      return false;
-    }
+    if (beforeAt.length < 2 || domain.length < 5) return false;
 
     return true;
   }
@@ -105,6 +111,13 @@ class FirebaseService {
           reminderTime: '6:00 AM',
           notificationsEnabled: true,
           soundEnabled: true,
+          customTasks: [
+            { id: '1', title: 'Wake up (on time)', order: 1 },
+            { id: '2', title: 'Make bed', order: 2 },
+            { id: '3', title: 'Drink water', order: 3 },
+            { id: '4', title: 'Move body (5 min)', order: 4 },
+            { id: '5', title: 'No phone (10 min)', order: 5 },
+          ],
           lastUpdate: new Date().toISOString()
         };
 
@@ -148,7 +161,14 @@ class FirebaseService {
           completedDays: [],
           reminderTime: '6:00 AM',
           notificationsEnabled: true,
-          soundEnabled: true
+          soundEnabled: true,
+          customTasks: [
+            { id: '1', title: 'Wake up (on time)', order: 1 },
+            { id: '2', title: 'Make bed', order: 2 },
+            { id: '3', title: 'Drink water', order: 3 },
+            { id: '4', title: 'Move body (5 min)', order: 4 },
+            { id: '5', title: 'No phone (10 min)', order: 5 },
+          ]
         };
 
         const sessionId = 'session_' + Date.now();
@@ -205,7 +225,14 @@ class FirebaseService {
           completedDays: [],
           reminderTime: '6:00 AM',
           notificationsEnabled: true,
-          soundEnabled: true
+          soundEnabled: true,
+          customTasks: [
+            { id: '1', title: 'Wake up (on time)', order: 1 },
+            { id: '2', title: 'Make bed', order: 2 },
+            { id: '3', title: 'Drink water', order: 3 },
+            { id: '4', title: 'Move body (5 min)', order: 4 },
+            { id: '5', title: 'No phone (10 min)', order: 5 },
+          ]
         });
       }, 200);
     });
@@ -221,7 +248,6 @@ class CoachService {
       const systemPrompt = `Eres un entrenador personal motivacional para una app de hábitos matutinos.
 Tu trabajo es inspirar a las personas a mantener buenos hábitos.
 Eres energético, auténtico, y celebras logros.
-Conoces la psicología del hábito.
 Adapta tu tono al progreso del usuario.
 
 REGLAS:
@@ -302,10 +328,13 @@ export default function App() {
   const [onboardingComplete, setOnboardingComplete] = React.useState(false);
   const [appJustOpened, setAppJustOpened] = React.useState(true);
 
-  // Coach state
   const [showCoachModal, setShowCoachModal] = React.useState(false);
   const [coachMessage, setCoachMessage] = React.useState('');
   const [coachLoading, setCoachLoading] = React.useState(false);
+
+  const [showEditModal, setShowEditModal] = React.useState(false);
+  const [editingTasks, setEditingTasks] = React.useState([]);
+  const [newTaskTitle, setNewTaskTitle] = React.useState('');
 
   const [formData, setFormData] = React.useState({
     name: '',
@@ -329,7 +358,6 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [soundEnabled, setSoundEnabled] = React.useState(true);
 
-  // Cargar datos al login
   const loadUserData = async (userProgress) => {
     setStreak(userProgress.streak || 0);
     setBestStreak(userProgress.bestStreak || 0);
@@ -337,10 +365,43 @@ export default function App() {
     setReminderTime(userProgress.reminderTime || '6:00 AM');
     setNotificationsEnabled(userProgress.notificationsEnabled !== false);
     setSoundEnabled(userProgress.soundEnabled !== false);
+    
+    if (userProgress.customTasks && userProgress.customTasks.length > 0) {
+      const sortedTasks = userProgress.customTasks
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map(task => ({ ...task, completed: false }));
+      setTasks(sortedTasks);
+    }
+    
     setOnboardingComplete(true);
   };
 
-  // Mostrar coach al abrir app
+  React.useEffect(() => {
+    if (user) {
+      firebaseService.getProgress(user.uid).then((userProgress) => {
+        if (userProgress) {
+          setStreak(userProgress.streak || 0);
+          setBestStreak(userProgress.bestStreak || 0);
+          setCompletedDays(userProgress.completedDays || []);
+          setReminderTime(userProgress.reminderTime || '6:00 AM');
+          setNotificationsEnabled(userProgress.notificationsEnabled !== false);
+          setSoundEnabled(userProgress.soundEnabled !== false);
+          
+          if (userProgress.customTasks && userProgress.customTasks.length > 0) {
+            const sortedTasks = userProgress.customTasks
+              .sort((a, b) => (a.order || 0) - (b.order || 0))
+              .map(task => ({ ...task, completed: false }));
+            setTasks(sortedTasks);
+          }
+          
+          if (userProgress.onboardingCompleted) {
+            setOnboardingComplete(true);
+          }
+        }
+      });
+    }
+  }, [user]);
+
   React.useEffect(() => {
     if (user && onboardingComplete && appJustOpened) {
       setTimeout(() => {
@@ -351,30 +412,24 @@ export default function App() {
   }, [user, onboardingComplete, appJustOpened]);
 
   const generateDailyCoach = async () => {
-  setCoachLoading(true);
-  setCoachMessage('');
-  try {
-    const monthlyStats = getMonthlyStats();
-    console.log('Generando coach con:', { streak, bestStreak, percentage: monthlyStats.percentage });
-    
-    const message = await coachService.generateCoachMessage(
-      user.name,
-      streak,
-      bestStreak,
-      monthlyStats.percentage,
-      'daily'
-    );
-    
-    console.log('Mensaje generado:', message);
-    setCoachMessage(message);
-    setShowCoachModal(true);
-  } catch (error) {
-    console.error('Error generating coach:', error);
-    alert('Error generando mensaje: ' + error.message);
-  } finally {
-    setCoachLoading(false);
-  }
-};
+    setCoachLoading(true);
+    try {
+      const monthlyStats = getMonthlyStats();
+      const message = await coachService.generateCoachMessage(
+        user.name,
+        streak,
+        bestStreak,
+        monthlyStats.percentage,
+        'daily'
+      );
+      setCoachMessage(message);
+      setShowCoachModal(true);
+    } catch (error) {
+      console.error('Error generating coach:', error);
+    } finally {
+      setCoachLoading(false);
+    }
+  };
 
   const generateCelebrationCoach = async () => {
     setCoachLoading(true);
@@ -484,35 +539,130 @@ export default function App() {
   };
 
   const toggleTask = (id) => {
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (completedDays.includes(today)) {
+      Alert.alert(
+        '¡Ya completaste hoy! 🎉',
+        'Regresa mañana para marcar nuevas tareas.'
+      );
+      return;
+    }
+
     setTasks(tasks.map(task =>
       task.id === id ? { ...task, completed: !task.completed } : task
     ));
   };
 
   const handleComplete = async () => {
-    if (tasks.every(t => t.completed)) {
-      const newStreak = streak + 1;
-      setStreak(newStreak);
-      if (newStreak > bestStreak) setBestStreak(newStreak);
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (completedDays.includes(today)) {
+      Alert.alert(
+        '¡Ya completaste hoy! 🎉',
+        'Regresa mañana para continuar tu racha. ¡Lo estás haciendo increíble!'
+      );
+      return;
+    }
 
-      const today = new Date().toISOString().split('T')[0];
-      const newCompletedDays = completedDays.includes(today)
-        ? completedDays
-        : [...completedDays, today];
-      setCompletedDays(newCompletedDays);
+    if (!tasks.every(t => t.completed)) {
+      return;
+    }
 
-      if (user) {
-        await firebaseService.updateProgress(user.uid, {
-          streak: newStreak,
-          bestStreak: Math.max(bestStreak, newStreak),
-          completedDays: newCompletedDays
-        });
-      }
+    const newStreak = streak + 1;
+    setStreak(newStreak);
+    if (newStreak > bestStreak) setBestStreak(newStreak);
 
-      setTasks(tasks.map(t => ({ ...t, completed: false })));
-      
-      // Generar celebración coach
-      await generateCelebrationCoach();
+    const newCompletedDays = [...completedDays, today];
+    setCompletedDays(newCompletedDays);
+
+    if (user) {
+      await firebaseService.updateProgress(user.uid, {
+        streak: newStreak,
+        bestStreak: Math.max(bestStreak, newStreak),
+        completedDays: newCompletedDays
+      });
+    }
+
+    setTasks(tasks.map(t => ({ ...t, completed: false })));
+    
+    if (notificationsEnabled) {
+      notificationService.sendNotification('🎉 ¡Mañana Ganada!', {
+        body: `Racha actual: ${newStreak} días 🔥`,
+        tag: 'morningwin-daily'
+      });
+    }
+
+    await generateCelebrationCoach();
+  };
+
+  const openEditRoutine = () => {
+    setEditingTasks(JSON.parse(JSON.stringify(tasks)));
+    setShowEditModal(true);
+  };
+
+  const saveEditedRoutine = async () => {
+    if (editingTasks.length === 0) {
+      Alert.alert('Error', 'Debes tener al menos 1 tarea');
+      return;
+    }
+
+    const customTasks = editingTasks.map((task, index) => ({
+      id: task.id,
+      title: task.title,
+      order: index + 1
+    }));
+
+    if (user) {
+      await firebaseService.updateProgress(user.uid, {
+        customTasks
+      });
+    }
+
+    setTasks(editingTasks.map(t => ({ ...t, completed: false })));
+    setShowEditModal(false);
+    Alert.alert('Éxito', 'Tu rutina ha sido actualizada');
+  };
+
+  const addNewTask = () => {
+    if (!newTaskTitle.trim()) {
+      Alert.alert('Error', 'Escribe el título de la tarea');
+      return;
+    }
+
+    const newTask = {
+      id: 'task_' + Date.now(),
+      title: newTaskTitle,
+      completed: false
+    };
+
+    setEditingTasks([...editingTasks, newTask]);
+    setNewTaskTitle('');
+  };
+
+  const deleteTask = (id) => {
+    setEditingTasks(editingTasks.filter(task => task.id !== id));
+  };
+
+  const updateTaskTitle = (id, newTitle) => {
+    setEditingTasks(editingTasks.map(task =>
+      task.id === id ? { ...task, title: newTitle } : task
+    ));
+  };
+
+  const moveTaskUp = (index) => {
+    if (index > 0) {
+      const newTasks = [...editingTasks];
+      [newTasks[index], newTasks[index - 1]] = [newTasks[index - 1], newTasks[index]];
+      setEditingTasks(newTasks);
+    }
+  };
+
+  const moveTaskDown = (index) => {
+    if (index < editingTasks.length - 1) {
+      const newTasks = [...editingTasks];
+      [newTasks[index], newTasks[index + 1]] = [newTasks[index + 1], newTasks[index]];
+      setEditingTasks(newTasks);
     }
   };
 
@@ -750,7 +900,8 @@ export default function App() {
               style={styles.onboardingButton}
               onPress={async () => {
                 await firebaseService.updateProgress(user.uid, {
-                  reminderTime
+                  reminderTime,
+                  onboardingCompleted: true
                 });
                 setOnboardingComplete(true);
               }}
@@ -869,7 +1020,13 @@ export default function App() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>AI Coach</Text>
+          <Text style={styles.sectionTitle}>Premium Features</Text>
+          <TouchableOpacity
+            style={styles.coachButtonSettings}
+            onPress={openEditRoutine}
+          >
+            <Text style={styles.coachButtonText}>✏️ Editar Mi Rutina</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.coachButtonSettings}
             onPress={generateDailyCoach}
@@ -893,6 +1050,12 @@ export default function App() {
                 await firebaseService.updateProgress(user.uid, {
                   notificationsEnabled: value
                 });
+
+                if (value) {
+                  notificationService.sendNotification('🔔 Notificaciones Habilitadas', {
+                    body: 'Recibirás recordatorios diarios a las ' + reminderTime
+                  });
+                }
               }}
               trackColor={{ false: '#f0f0f0', true: '#81c784' }}
               thumbColor={notificationsEnabled ? '#00ff00' : '#f0f0f0'}
@@ -945,7 +1108,103 @@ export default function App() {
     );
   }
 
-  // ==================== HOME SCREEN ====================
+// ==================== EDIT ROUTINE SCREEN ====================
+  if (showEditModal) {
+    return (
+      <View style={styles.editModalContainer}>
+        <ScrollView style={styles.editModalScroll}>
+          <View style={styles.editModalHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <Text style={styles.editModalBackButton}>← Atrás</Text>
+            </TouchableOpacity>
+            <Text style={styles.editModalTitle}>✏️ Editar Mi Rutina</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <View style={styles.editModalContent}>
+            <Text style={styles.editSectionTitle}>Mis Tareas</Text>
+
+            <View style={styles.tasksEditList}>
+              {editingTasks.map((task, index) => (
+                <View key={task.id} style={styles.editTaskItem}>
+                  <View style={styles.editTaskInfo}>
+                    <Text style={styles.editTaskIndex}>{index + 1}.</Text>
+                    <TextInput
+                      style={styles.editTaskInput}
+                      value={task.title}
+                      onChangeText={(text) => updateTaskTitle(task.id, text)}
+                      placeholder="Nombre de la tarea"
+                    />
+                  </View>
+
+                  <View style={styles.editTaskButtons}>
+                    <TouchableOpacity
+                      style={styles.editArrowButton}
+                      onPress={() => moveTaskUp(index)}
+                      disabled={index === 0}
+                    >
+                      <Text style={styles.editArrowText}>↑</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.editArrowButton}
+                      onPress={() => moveTaskDown(index)}
+                      disabled={index === editingTasks.length - 1}
+                    >
+                      <Text style={styles.editArrowText}>↓</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.editDeleteButton}
+                      onPress={() => deleteTask(task.id)}
+                    >
+                      <Text style={styles.editDeleteText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.editSectionTitle}>Agregar Nueva Tarea</Text>
+
+            <View style={styles.addTaskContainer}>
+              <TextInput
+                style={styles.addTaskInput}
+                placeholder="Escribe una nueva tarea"
+                value={newTaskTitle}
+                onChangeText={setNewTaskTitle}
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity
+                style={styles.addTaskButton}
+                onPress={addNewTask}
+              >
+                <Text style={styles.addTaskButtonText}>+ Agregar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.editModalButtons}>
+              <TouchableOpacity
+                style={styles.editSaveButton}
+                onPress={saveEditedRoutine}
+              >
+                <Text style={styles.editSaveButtonText}>✅ Guardar Cambios</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.editCancelButton}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.editCancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+// ==================== HOME SCREEN ====================
   return (
     <>
       <ScrollView style={styles.container}>
@@ -976,36 +1235,58 @@ export default function App() {
         </View>
 
         <View style={styles.titleSection}>
-          <Text style={styles.title}>Gana tu Mañana</Text>
-          <Text style={styles.subtitle}>Completa tu rutina antes de las 9am</Text>
+          {completedDays.includes(new Date().toISOString().split('T')[0]) ? (
+            <>
+              <Text style={styles.title}>🎉 ¡Felicidades!</Text>
+              <Text style={styles.subtitle}>Haz completado tu rutina antes de las 9am. Nos vemos mañana</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.title}>Gana tu Mañana</Text>
+              <Text style={styles.subtitle}>Completa tu rutina antes de las 9am</Text>
+            </>
+          )}
         </View>
 
         <View style={styles.tasksContainer}>
-          {tasks.map((task) => (
-            <TouchableOpacity
-              key={task.id}
-              style={[styles.taskItem, task.completed && styles.taskCompleted]}
-              onPress={() => toggleTask(task.id)}
-            >
-              <View style={styles.taskCheckbox}>
-                {task.completed && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text
+          {tasks.map((task) => {
+            const today = new Date().toISOString().split('T')[0];
+            const isCompletedToday = completedDays.includes(today);
+
+            return (
+              <TouchableOpacity
+                key={task.id}
                 style={[
-                  styles.taskText,
-                  task.completed && styles.taskTextCompleted,
+                  styles.taskItem,
+                  task.completed && styles.taskCompleted,
+                  isCompletedToday && styles.taskDisabled
                 ]}
+                onPress={() => toggleTask(task.id)}
+                disabled={isCompletedToday}
               >
-                {task.title}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.taskCheckbox}>
+                  {task.completed && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text
+                  style={[
+                    styles.taskText,
+                    task.completed && styles.taskTextCompleted,
+                  ]}
+                >
+                  {task.title}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <TouchableOpacity
-          style={[styles.completeButton, allCompleted && styles.completeButtonActive]}
+          style={[
+            styles.completeButton, 
+            allCompleted && !completedDays.includes(new Date().toISOString().split('T')[0]) && styles.completeButtonActive
+          ]}
           onPress={handleComplete}
-          disabled={!allCompleted}
+          disabled={!allCompleted || completedDays.includes(new Date().toISOString().split('T')[0])}
         >
           <Text style={styles.completeButtonText}>
             {allCompleted ? '🎉 ¡Mañana Ganada!' : `${tasks.filter(t => t.completed).length}/${tasks.length} hecho`}
@@ -1069,6 +1350,7 @@ const styles = StyleSheet.create({
   checkmark: { color: '#000', fontSize: 16, fontWeight: 'bold' },
   taskText: { fontSize: 16, color: '#333', flex: 1, fontWeight: '500' },
   taskTextCompleted: { color: '#999', textDecorationLine: 'line-through' },
+  taskDisabled: { opacity: 0.5, pointerEvents: 'none', cursor: 'not-allowed' },
   completeButton: { paddingVertical: 18, paddingHorizontal: 20, backgroundColor: '#f0f0f0', borderRadius: 12, alignItems: 'center', marginBottom: 30 },
   completeButtonActive: { backgroundColor: '#000' },
   completeButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
@@ -1113,7 +1395,6 @@ const styles = StyleSheet.create({
   logoutButton: { paddingVertical: 16, paddingHorizontal: 20, backgroundColor: '#f5f5f5', borderRadius: 12, alignItems: 'center', borderWidth: 2, borderColor: '#ddd' },
   logoutButtonText: { fontSize: 16, fontWeight: '700', color: '#000' },
   spacer: { height: 20 },
-  // Coach Modal Styles
   coachOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   coachContent: { backgroundColor: '#fff', borderRadius: 16, padding: 24, maxWidth: 420, width: '100%', alignItems: 'center' },
   coachClose: { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' },
@@ -1125,4 +1406,30 @@ const styles = StyleSheet.create({
   coachShareButtonText: { color: '#000', fontSize: 14, fontWeight: '700' },
   coachCloseButton: { flex: 1, paddingVertical: 12, backgroundColor: '#000', borderRadius: 8, alignItems: 'center' },
   coachCloseButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  editModalContainer: { flex: 1, backgroundColor: '#fff' },
+  editModalScroll: { flex: 1 },
+  editModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 30, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  editModalBackButton: { fontSize: 16, color: '#000', fontWeight: '600' },
+  editModalTitle: { fontSize: 20, fontWeight: '700', color: '#000' },
+  editModalContent: { paddingHorizontal: 20, paddingVertical: 20 },
+  editSectionTitle: { fontSize: 14, fontWeight: '700', color: '#000', marginBottom: 12, marginTop: 20, textTransform: 'uppercase' },
+  tasksEditList: { gap: 12, marginBottom: 20 },
+  editTaskItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12, backgroundColor: '#f5f5f5', borderRadius: 12 },
+  editTaskInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', marginRight: 12 },
+  editTaskIndex: { fontSize: 14, fontWeight: '700', color: '#000', marginRight: 8, minWidth: 20 },
+  editTaskInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, backgroundColor: '#fff' },
+  editTaskButtons: { flexDirection: 'row', gap: 8 },
+  editArrowButton: { paddingHorizontal: 8, paddingVertical: 8, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
+  editArrowText: { fontSize: 14, fontWeight: '700', color: '#000' },
+  editDeleteButton: { paddingHorizontal: 8, paddingVertical: 8, backgroundColor: '#ffebee', borderRadius: 8 },
+  editDeleteText: { fontSize: 14 },
+  addTaskContainer: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  addTaskInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, backgroundColor: '#fafafa' },
+  addTaskButton: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#000', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  addTaskButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  editModalButtons: { flexDirection: 'column', gap: 12, marginTop: 20, marginBottom: 30 },
+  editSaveButton: { width: '100%', paddingVertical: 14, backgroundColor: '#000', borderRadius: 12, alignItems: 'center' },
+  editSaveButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  editCancelButton: { width: '100%', paddingVertical: 14, backgroundColor: '#f5f5f5', borderRadius: 12, alignItems: 'center', borderWidth: 2, borderColor: '#ddd' },
+  editCancelButtonText: { color: '#000', fontSize: 16, fontWeight: '700' },
 });

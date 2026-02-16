@@ -1,4 +1,7 @@
 {
-  "buildCommand": "",
-  "outputDirectory": "dist"
+  "buildCommand": "expo export --platform web",
+  "outputDirectory": "dist",
+  "env": {
+    "REACT_APP_CLAUDE_API_KEY": "@claude_api_key"
+  }
 }

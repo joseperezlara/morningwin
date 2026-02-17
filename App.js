@@ -365,6 +365,7 @@ export default function App() {
   const [authMode, setAuthMode] = React.useState('login');
   const [errorMessage, setErrorMessage] = React.useState('');
   const [currentScreen, setCurrentScreen] = React.useState('home');
+  const [coachScreenVisible, setCoachScreenVisible] = React.useState(false);
   const [currentStep, setCurrentStep] = React.useState(0);
   const [onboardingComplete, setOnboardingComplete] = React.useState(false);
   const [appJustOpened, setAppJustOpened] = React.useState(true);
@@ -464,44 +465,46 @@ export default function App() {
   }, [user, onboardingComplete, appJustOpened]);
 
   const generateDailyCoach = async () => {
-    setCoachLoading(true);
-    try {
-      const monthlyStats = getMonthlyStats();
-      const message = await coachService.generateCoachMessage(
-        user.name,
-        streak,
-        bestStreak,
-        monthlyStats.percentage,
-        'daily'
-      );
-      setCoachMessage(message);
-      setShowCoachModal(true);
-    } catch (error) {
-      console.error('Error generating coach:', error);
-    } finally {
-      setCoachLoading(false);
-    }
-  };
+  setCoachLoading(true);
+  try {
+    const monthlyStats = getMonthlyStats();
+    const message = await coachService.generateCoachMessage(
+      user.name,
+      streak,
+      bestStreak,
+      monthlyStats.percentage,
+      'daily'
+    );
+    setCoachMessage(message);
+    setCurrentScreen('coach');
+    setCoachScreenVisible(true);
+  } catch (error) {
+    console.error('Error generating coach:', error);
+  } finally {
+    setCoachLoading(false);
+  }
+};
 
   const generateCelebrationCoach = async () => {
-    setCoachLoading(true);
-    try {
-      const monthlyStats = getMonthlyStats();
-      const message = await coachService.generateCoachMessage(
-        user.name,
-        streak + 1,
-        bestStreak,
-        monthlyStats.percentage,
-        'celebration'
-      );
-      setCoachMessage(message);
-      setShowCoachModal(true);
-    } catch (error) {
-      console.error('Error generating celebration:', error);
-    } finally {
-      setCoachLoading(false);
-    }
-  };
+  setCoachLoading(true);
+  try {
+    const monthlyStats = getMonthlyStats();
+    const message = await coachService.generateCoachMessage(
+      user.name,
+      streak + 1,
+      bestStreak,
+      monthlyStats.percentage,
+      'celebration'
+    );
+    setCoachMessage(message);
+    setCurrentScreen('coach');
+    setCoachScreenVisible(true);
+  } catch (error) {
+    console.error('Error generating celebration:', error);
+  } finally {
+    setCoachLoading(false);
+  }
+};
 
   const handleShareCoach = async () => {
     try {
@@ -1072,6 +1075,57 @@ export default function App() {
     );
   }
 
+// ==================== COACH SCREEN ====================
+  if (currentScreen === 'coach') {
+    return (
+      <View style={styles.container}>
+        <ScrollView style={styles.coachScreenScroll}>
+          <View style={styles.coachScreenHeader}>
+            <TouchableOpacity onPress={() => {
+              setCurrentScreen('home');
+              setCoachScreenVisible(false);
+            }}>
+              <Text style={styles.coachScreenBackButton}>← Atrás</Text>
+            </TouchableOpacity>
+            <Text style={styles.coachScreenTitle}>💬 Tu Coach IA</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <View style={styles.coachScreenContent}>
+            {coachLoading ? (
+              <ActivityIndicator size="large" color="#000" style={{ marginVertical: 40 }} />
+            ) : (
+              <>
+                <View style={styles.coachMessageBox}>
+                  <Text style={styles.coachScreenMessageText}>{coachMessage}</Text>
+                </View>
+
+                <View style={styles.coachScreenButtons}>
+                  <TouchableOpacity
+                    style={styles.coachScreenShareButton}
+                    onPress={handleShareCoach}
+                  >
+                    <Text style={styles.coachScreenShareButtonText}>📤 Compartir</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.coachScreenCloseButton}
+                    onPress={() => {
+                      setCurrentScreen('home');
+                      setCoachScreenVisible(false);
+                    }}
+                  >
+                    <Text style={styles.coachScreenCloseButtonText}>Continuar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
 // ==================== EDIT ROUTINE SCREEN ====================
   if (showEditModal) {
     return (
@@ -1452,8 +1506,7 @@ export default function App() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
-
-      <CoachModal />
+      
       <EditRoutineModal />
     </>
   );
@@ -1600,4 +1653,16 @@ const styles = StyleSheet.create({
   editScreenTitle: { fontSize: 20, fontWeight: '700', color: '#000' },
   editScreenContent: { paddingHorizontal: 20, paddingVertical: 20 },
   editScreenButtons: { flexDirection: 'column', gap: 12, marginTop: 20, marginBottom: 30 },
+  coachScreenScroll: { flex: 1 },
+  coachScreenHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 30, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  coachScreenBackButton: { fontSize: 16, color: '#000', fontWeight: '600' },
+  coachScreenTitle: { fontSize: 20, fontWeight: '700', color: '#000' },
+  coachScreenContent: { paddingHorizontal: 20, paddingVertical: 40, justifyContent: 'center' },
+  coachMessageBox: { backgroundColor: '#f9f9f9', borderRadius: 16, padding: 24, marginBottom: 30, borderWidth: 1, borderColor: '#f0f0f0' },
+  coachScreenMessageText: { fontSize: 18, color: '#333', textAlign: 'center', lineHeight: 28, fontWeight: '500' },
+  coachScreenButtons: { flexDirection: 'column', gap: 12 },
+  coachScreenShareButton: { paddingVertical: 14, backgroundColor: '#f5f5f5', borderRadius: 12, alignItems: 'center', borderWidth: 2, borderColor: '#ddd' },
+  coachScreenShareButtonText: { color: '#000', fontSize: 16, fontWeight: '700' },
+  coachScreenCloseButton: { paddingVertical: 14, backgroundColor: '#000', borderRadius: 12, alignItems: 'center' },
+  coachScreenCloseButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

@@ -1,7 +1,29 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Switch, Alert, Modal, ActivityIndicator, Share } from 'react-native';
+import { initializeApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
+
+// ==================== FIREBASE CONFIG ====================
+const firebaseConfig = {
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || 'morningwin-app',
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || 'morningwin-app.firebaseapp.com',
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || 'AIzaSyCesd8LVdz5B28UFHGo-elEwo49w2YeQ2Q',
+  appId: '1:95677741192:web:' + Math.random().toString(36).substring(7),
+};
 
 const CLAUDE_API_KEY = process.env.REACT_APP_CLAUDE_API_KEY || 'fallback-key-for-demo';
+
+// Initialize Firebase
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  console.log('Firebase initialized successfully');
+} catch (error) {
+  console.error('Firebase initialization error:', error);
+}
 
 // ==================== NOTIFICATION SERVICE ====================
 class NotificationService {
@@ -32,21 +54,12 @@ class NotificationService {
 
 const notificationService = new NotificationService();
 
-// ==================== FIREBASE SERVICE ====================
+// ==================== FIREBASE SERVICE (REAL) ====================
 class FirebaseService {
   constructor() {
     this.currentUser = null;
-    this.checkSession();
-  }
-
-  checkSession() {
-    const sessionId = localStorage.getItem('morningwin_session_id');
-    if (sessionId) {
-      const sessions = JSON.parse(localStorage.getItem('morningwin_sessions') || '{}');
-      if (sessions[sessionId]) {
-        this.currentUser = sessions[sessionId];
-      }
-    }
+    this.unsubscribeAuth = null;
+    this.unsubscribeProgress = null;
   }
 
   isValidEmail(email) {
@@ -66,159 +79,160 @@ class FirebaseService {
     return true;
   }
 
-  async signup(name, email, password) {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (!name || name.trim().length < 2) {
-          reject(new Error('El nombre debe tener al menos 2 caracteres'));
-          return;
-        }
+  // Listen to auth state changes
+  onAuthStateChanged(callback) {
+    if (!auth) {
+      console.error('Firebase not initialized');
+      callback(null);
+      return;
+    }
 
-        if (!this.isValidEmail(email)) {
-          reject(new Error('Email no válido. Usa un dominio real (ej: ejemplo@gmail.com)'));
-          return;
-        }
-
-        if (!password || password.length < 6) {
-          reject(new Error('La contraseña debe tener al menos 6 caracteres'));
-          return;
-        }
-
-        const users = JSON.parse(localStorage.getItem('morningwin_users') || '{}');
-        if (users[email]) {
-          reject(new Error('Este email ya está registrado'));
-          return;
-        }
-
-        const uid = 'user_' + Date.now();
-        const user = {
-          uid,
-          name,
-          email,
-          password: btoa(password),
-          createdAt: new Date().toISOString(),
-          emailVerified: false
+    this.unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        this.currentUser = {
+          uid: user.uid,
+          email: user.email,
+          name: user.displayName || user.email.split('@')[0],
+          createdAt: user.metadata.creationTime
         };
-
-        users[email] = user;
-        localStorage.setItem('morningwin_users', JSON.stringify(users));
-
-        const userProgress = {
-          uid,
-          streak: 0,
-          bestStreak: 0,
-          completedDays: [],
-          reminderTime: '6:00 AM',
-          notificationsEnabled: true,
-          soundEnabled: true,
-          customTasks: [
-            { id: '1', title: 'Wake up (on time)', order: 1 },
-            { id: '2', title: 'Make bed', order: 2 },
-            { id: '3', title: 'Drink water', order: 3 },
-            { id: '4', title: 'Move body (5 min)', order: 4 },
-            { id: '5', title: 'No phone (10 min)', order: 5 },
-          ],
-          lastUpdate: new Date().toISOString()
-        };
-
-        const progressData = JSON.parse(localStorage.getItem('morningwin_progress') || '{}');
-        progressData[uid] = userProgress;
-        localStorage.setItem('morningwin_progress', JSON.stringify(progressData));
-
-        const sessionId = 'session_' + Date.now();
-        const sessions = JSON.parse(localStorage.getItem('morningwin_sessions') || '{}');
-        sessions[sessionId] = user;
-        localStorage.setItem('morningwin_sessions', JSON.stringify(sessions));
-        localStorage.setItem('morningwin_session_id', sessionId);
-
-        this.currentUser = user;
-        resolve({ user, uid, progress: userProgress });
-      }, 500);
+        console.log('User logged in:', this.currentUser.email);
+      } else {
+        this.currentUser = null;
+        console.log('User logged out');
+      }
+      callback(user);
     });
+  }
+
+  async signup(name, email, password) {
+    try {
+      if (!name || name.trim().length < 2) {
+        throw new Error('El nombre debe tener al menos 2 caracteres');
+      }
+
+      if (!this.isValidEmail(email)) {
+        throw new Error('Email no válido. Usa un dominio real (ej: ejemplo@gmail.com)');
+      }
+
+      if (!password || password.length < 6) {
+        throw new Error('La contraseña debe tener al menos 6 caracteres');
+      }
+
+      if (!auth) throw new Error('Firebase not initialized');
+
+      // Create user in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Create user document in Firestore
+      const userProgress = {
+        uid: user.uid,
+        name,
+        email,
+        streak: 0,
+        bestStreak: 0,
+        completedDays: [],
+        reminderTime: '6:00 AM',
+        notificationsEnabled: true,
+        soundEnabled: true,
+        customTasks: [
+          { id: '1', title: 'Wake up (on time)', order: 1 },
+          { id: '2', title: 'Make bed', order: 2 },
+          { id: '3', title: 'Drink water', order: 3 },
+          { id: '4', title: 'Move body (5 min)', order: 4 },
+          { id: '5', title: 'No phone (10 min)', order: 5 },
+        ],
+        createdAt: new Date().toISOString(),
+        lastUpdate: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'users', user.uid), userProgress);
+
+      this.currentUser = { uid: user.uid, email, name, createdAt: new Date().toISOString() };
+      return { user: this.currentUser, uid: user.uid, progress: userProgress };
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw new Error(error.message || 'Error en registro');
+    }
   }
 
   async login(email, password) {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (!email || !password) {
-          reject(new Error('Email y contraseña requeridos'));
-          return;
-        }
+    try {
+      if (!email || !password) {
+        throw new Error('Email y contraseña requeridos');
+      }
 
-        const users = JSON.parse(localStorage.getItem('morningwin_users') || '{}');
-        const user = users[email];
+      if (!auth) throw new Error('Firebase not initialized');
 
-        if (!user || user.password !== btoa(password)) {
-          reject(new Error('Email o contraseña incorrectos'));
-          return;
-        }
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-        const progressData = JSON.parse(localStorage.getItem('morningwin_progress') || '{}');
-        const progress = progressData[user.uid] || {
-          uid: user.uid,
-          streak: 0,
-          bestStreak: 0,
-          completedDays: [],
-          reminderTime: '6:00 AM',
-          notificationsEnabled: true,
-          soundEnabled: true,
-          customTasks: [
-            { id: '1', title: 'Wake up (on time)', order: 1 },
-            { id: '2', title: 'Make bed', order: 2 },
-            { id: '3', title: 'Drink water', order: 3 },
-            { id: '4', title: 'Move body (5 min)', order: 4 },
-            { id: '5', title: 'No phone (10 min)', order: 5 },
-          ]
-        };
+      // Get user data from Firestore
+      const userDocSnap = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDocSnap.exists()) {
+        throw new Error('Datos de usuario no encontrados. Por favor, regístrate.');
+      }
 
-        const sessionId = 'session_' + Date.now();
-        const sessions = JSON.parse(localStorage.getItem('morningwin_sessions') || '{}');
-        sessions[sessionId] = user;
-        localStorage.setItem('morningwin_sessions', JSON.stringify(sessions));
-        localStorage.setItem('morningwin_session_id', sessionId);
-
-        this.currentUser = user;
-        resolve({ user, progress });
-      }, 500);
-    });
+      const userData = userDocSnap.data();
+      this.currentUser = { 
+        uid: user.uid, 
+        email: userData.email, 
+        name: userData.name,
+        createdAt: userData.createdAt
+      };
+      return { user: this.currentUser, progress: userData };
+    } catch (error) {
+      console.error('Login error:', error);
+      throw new Error(error.message || 'Error al iniciar sesión');
+    }
   }
 
   async logout() {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const sessionId = localStorage.getItem('morningwin_session_id');
-        if (sessionId) {
-          const sessions = JSON.parse(localStorage.getItem('morningwin_sessions') || '{}');
-          delete sessions[sessionId];
-          localStorage.setItem('morningwin_sessions', JSON.stringify(sessions));
-          localStorage.removeItem('morningwin_session_id');
-        }
-        this.currentUser = null;
-        resolve();
-      }, 300);
-    });
+    try {
+      if (!auth) throw new Error('Firebase not initialized');
+      
+      // Unsubscribe from listeners
+      if (this.unsubscribeAuth) this.unsubscribeAuth();
+      if (this.unsubscribeProgress) this.unsubscribeProgress();
+      
+      await signOut(auth);
+      this.currentUser = null;
+      console.log('User signed out');
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw new Error(error.message || 'Error al cerrar sesión');
+    }
   }
 
   async updateProgress(uid, progressData) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const allProgress = JSON.parse(localStorage.getItem('morningwin_progress') || '{}');
-        allProgress[uid] = {
-          ...allProgress[uid],
-          ...progressData,
-          lastUpdate: new Date().toISOString()
-        };
-        localStorage.setItem('morningwin_progress', JSON.stringify(allProgress));
-        resolve(allProgress[uid]);
-      }, 300);
-    });
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const userRef = doc(db, 'users', uid);
+      const updateData = {
+        ...progressData,
+        lastUpdate: new Date().toISOString()
+      };
+      
+      await setDoc(userRef, updateData, { merge: true });
+      console.log('Progress updated:', uid);
+      return updateData;
+    } catch (error) {
+      console.error('Update progress error:', error);
+      throw new Error(error.message || 'Error al actualizar progreso');
+    }
   }
 
   async getProgress(uid) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const allProgress = JSON.parse(localStorage.getItem('morningwin_progress') || '{}');
-        resolve(allProgress[uid] || {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const userDocSnap = await getDoc(doc(db, 'users', uid));
+      
+      if (!userDocSnap.exists()) {
+        console.log('No user data found, returning defaults');
+        return {
           uid,
           streak: 0,
           bestStreak: 0,
@@ -233,9 +247,36 @@ class FirebaseService {
             { id: '4', title: 'Move body (5 min)', order: 4 },
             { id: '5', title: 'No phone (10 min)', order: 5 },
           ]
-        });
-      }, 200);
-    });
+        };
+      }
+
+      console.log('User data loaded:', uid);
+      return userDocSnap.data();
+    } catch (error) {
+      console.error('Get progress error:', error);
+      return null;
+    }
+  }
+
+  // Real-time listener for progress
+  listenToProgress(uid, callback) {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      this.unsubscribeProgress = onSnapshot(doc(db, 'users', uid), (doc) => {
+        if (doc.exists()) {
+          console.log('Progress updated in real-time:', uid);
+          callback(doc.data());
+        }
+      }, (error) => {
+        console.error('Real-time listener error:', error);
+      });
+
+      return this.unsubscribeProgress;
+    } catch (error) {
+      console.error('Listen to progress error:', error);
+      return null;
+    }
   }
 }
 
@@ -376,15 +417,42 @@ export default function App() {
     setOnboardingComplete(true);
   };
 
+  // Listen to auth state changes
   React.useEffect(() => {
-    if (user) {
-      firebaseService.getProgress(user.uid).then((userProgress) => {
+    firebaseService.onAuthStateChanged(async (firebaseUser) => {
+      if (firebaseUser) {
+        // User is signed in
+        setUser(firebaseService.currentUser);
+        
+        // Get initial progress
+        const userProgress = await firebaseService.getProgress(firebaseUser.uid);
         if (userProgress) {
-          loadUserData(userProgress);
+          await loadUserData(userProgress);
         }
-      });
-    }
-  }, [user]);
+
+        // Listen to real-time updates
+        firebaseService.listenToProgress(firebaseUser.uid, (updatedProgress) => {
+          setStreak(updatedProgress.streak || 0);
+          setBestStreak(updatedProgress.bestStreak || 0);
+          setCompletedDays(updatedProgress.completedDays || []);
+          setReminderTime(updatedProgress.reminderTime || '6:00 AM');
+          setNotificationsEnabled(updatedProgress.notificationsEnabled !== false);
+          setSoundEnabled(updatedProgress.soundEnabled !== false);
+          
+          if (updatedProgress.customTasks && updatedProgress.customTasks.length > 0) {
+            const sortedTasks = updatedProgress.customTasks
+              .sort((a, b) => (a.order || 0) - (b.order || 0))
+              .map(task => ({ ...task, completed: false }));
+            setTasks(sortedTasks);
+          }
+        });
+      } else {
+        // User is signed out
+        setUser(null);
+        setOnboardingComplete(false);
+      }
+    });
+  }, []);
 
   React.useEffect(() => {
     if (user && onboardingComplete && appJustOpened) {

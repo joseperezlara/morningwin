@@ -4,13 +4,13 @@
   "description": "Dead-simple morning routine streak app",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
-  "start": "expo start",
-  "android": "expo start --android",
-  "ios": "expo start --ios",
-  "web": "expo start --web",
-  "eject": "expo eject",
-  "build": "expo export --platform web"
-},
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "eject": "expo eject",
+    "build": "expo export --platform web"
+  },
   "dependencies": {
     "@expo/metro-runtime": "~3.1.3",
     "@react-native-firebase/app": "^19.0.0",
@@ -24,7 +24,7 @@
     "expo-linear-gradient": "^12.7.0",
     "expo-notifications": "^0.27.0",
     "expo-splash-screen": "~31.0.13",
-    "firebase": "^10.7.0",
+    "firebase": "^10.14.1",
     "react": "^18.2.0",
     "react-dom": "18.2.0",
     "react-native": "^0.73.0",

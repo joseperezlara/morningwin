@@ -221,6 +221,48 @@ export default function App() {
   const theme = isDark ? THEMES.dark : THEMES.light;
   const styles = getStyles(theme);
 
+  // Fix definitivo: forzar scrollbar siempre visible para centrado consistente entre pantallas
+  // El problema: Coach tiene poco contenido (sin scrollbar), otras pantallas tienen scrollbar.
+  // El scrollbar ocupa ~15px, moviendo el centrado del pageWrapper.
+  // Solución: CSS global que reserva el espacio del scrollbar siempre.
+  React.useEffect(() => {
+    if (typeof document !== 'undefined') {
+      // Método 1: scrollbar-gutter en html/body
+      document.documentElement.style.scrollbarGutter = 'stable';
+      document.body.style.scrollbarGutter = 'stable';
+      // Método 2: inyectar CSS global como fallback para todos los navegadores
+      const styleId = 'morningwin-scrollfix';
+      if (!document.getElementById(styleId)) {
+        // React Native Web genera clases CSS atómicas para overflow.
+        // Buscamos la clase exacta que define overflow-y:auto y la sobrescribimos con scroll.
+        // Esto hace que el scrollbar siempre esté visible, evitando que el centrado salte.
+        const findAndFixScrollClass = () => {
+          let fixed = false;
+          Array.from(document.styleSheets).forEach(sheet => {
+            try {
+              Array.from(sheet.cssRules || []).forEach(rule => {
+                if (rule.style && rule.style.overflowY === 'auto' && rule.selectorText) {
+                  const style = document.createElement('style');
+                  style.id = styleId;
+                  style.textContent = `${rule.selectorText} { overflow-y: scroll !important; }`;
+                  document.head.appendChild(style);
+                  fixed = true;
+                }
+              });
+            } catch(e) {}
+          });
+          return fixed;
+        };
+        
+        // Intentar inmediatamente, y si no hay estilos cargados aún, reintentar
+        if (!findAndFixScrollClass()) {
+          setTimeout(findAndFixScrollClass, 100);
+          setTimeout(findAndFixScrollClass, 500);
+        }
+      }
+    }
+  }, []);
+
   const handleDarkModeToggle = async (value) => {
     const newOverride = value === (systemColorScheme === 'dark') ? null : value;
     setDarkModeOverride(newOverride);
@@ -667,7 +709,7 @@ export default function App() {
 function getStyles(theme) {
   return StyleSheet.create({
     // ── Global ────────────────────────────────────────────────
-    container: { flex: 1, backgroundColor: theme.bg, width: '100%' },
+    container: { flex: 1, backgroundColor: theme.bg, width: '100%', overflowY: 'scroll' },
     pageWrapper: { width: '100%', maxWidth: 760, alignSelf: 'center', paddingHorizontal: 20 },
 
     // ── TopNav ────────────────────────────────────────────────

@@ -493,7 +493,9 @@ export default function App() {
   // Siempre 4 elementos: nombre · 🌙/☀️ · ⚙️ · ⏻/🏠
   // Home: ⚙️ y ⏻ visibles, 🏠 invisible
   // Secundarias: ⚙️ invisible, 🏠 visible en posición de ⏻
-  const TopNav = ({ onBack = null, showSettings = false, showPower = false }) => (
+  // Home:        🌙 · 📊(visible) · ⚙️(visible)  · ⏻(visible)
+  // Secundarias: 🌙 · 📊(invisible) · ⚙️(invisible) · 🏠(visible)
+  const TopNav = ({ onBack = null, showSettings = false, showPower = false, showStats = false }) => (
     <View style={styles.topNav}>
       <TouchableOpacity onPress={() => setCurrentScreen('home')}>
         <Text style={styles.topNavName}>MorningWin</Text>
@@ -502,6 +504,9 @@ export default function App() {
         <Text style={styles.topNavUser}>{user.name}</Text>
         <TouchableOpacity style={styles.themeToggleBtn} onPress={() => handleDarkModeToggle(!isDark)}>
           <Text style={styles.themeToggleIcon}>{isDark ? '☀️' : '🌙'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.navIconBtn, !showStats && styles.navIconInvisible]} onPress={showStats ? () => setCurrentScreen('stats') : undefined}>
+          <Text style={styles.navIconText}>📊</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.navIconBtn, !showSettings && styles.navIconInvisible]} onPress={showSettings ? () => setCurrentScreen('settings') : undefined}>
           <Text style={styles.navIconText}>⚙️</Text>
@@ -671,7 +676,7 @@ export default function App() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.pageWrapper}>
-        <TopNav onBack={null} showSettings={true} showPower={true} />
+        <TopNav onBack={null} showStats={true} showSettings={true} showPower={true} />
         <View style={styles.homeDate}>
           <Text style={styles.date}>{new Date().toLocaleDateString('es-ES', {weekday:'long', month:'long', day:'numeric'})}</Text>
         </View>

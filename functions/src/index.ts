@@ -6,7 +6,57 @@
  *
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
-
+/**
+ * FIRESTORE SCHEMA v1
+ * 
+ * users/{uid}
+ *   - uid: string
+ *   - name: string
+ *   - email: string
+ *   - timezone: string (IANA timezone, e.g., "America/Mexico_City")
+ *   - level: string (Iniciado | Constante | Disciplinado | Enfocado | Imparable)
+ *   - totalScore: number (sum of all finalScores, never decreases)
+ *   - currentStreak: number (days completed consecutively)
+ *   - bestStreak: number (highest streak ever)
+ *   - monthly: { monthId, completedDays, totalDays, completionRate }
+ *   - createdAt: ISO string
+ *   - updatedAt: ISO string
+ *   - lastActiveAt: ISO string
+ *   - pro: { status, plan, stripeCustomerId, currentPeriodEnd, ... } (Sprint 4)
+ * 
+ * users/{uid}/tasks/{taskId}
+ *   - title: string
+ *   - group: string (optional)
+ *   - order: number
+ *   - done: boolean
+ *   - active: boolean
+ * 
+ * users/{uid}/daily_logs/{dateId} (YYYY-MM-DD)
+ *   - dateId: string
+ *   - dateLocal: string
+ *   - timezone: string
+ *   - status: "completed" | "incomplete"
+ *   - zone: "green" | "yellow" | "red"
+ *   - tasksTotal: number
+ *   - tasksCompleted: number
+ *   - tasksSnapshot: Task[]
+ *   - completedAt: ISO string
+ *   - completedAtLocal: HH:MM string
+ *   - score: { baseScore, timeBonus, streakBonus, finalScore }
+ *   - streakAfter: number
+ *   - levelAfter: string
+ *   - coach: { available, state, coachId }
+ *   - createdAt: ISO string
+ *   - updatedAt: ISO string
+ * 
+ * Immutable collections (backend-only writes):
+ *   - daily_logs
+ *   - coach_messages
+ *   - badges
+ *   - challenges
+ *   - billing/*
+ *   - referrals
+ */
 import {setGlobalOptions} from "firebase-functions";
 import {onRequest} from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";

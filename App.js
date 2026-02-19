@@ -290,9 +290,10 @@ export default function App() {
         const progress = await firebaseService.getProgress(firebaseUser.uid);
         if (progress) await loadUserData(progress);
         firebaseService.listenToProgress(firebaseUser.uid, (updated) => {
-          setStreak(updated.streak || 0);
-          setBestStreak(updated.bestStreak || 0);
-          setCompletedDays(updated.completedDays || []);
+  setStreak(updated.streak || 0);
+  setBestStreak(updated.bestStreak || 0);
+  setCompletedDays(updated.completedDays || []);
+  console.log('DEBUG - completedDays from Firebase:', updated.completedDays);
           setReminderTime(updated.reminderTime || '6:00 AM');
           setNotificationsEnabled(updated.notificationsEnabled !== false);
           setSoundEnabled(updated.soundEnabled !== false);
@@ -320,16 +321,32 @@ export default function App() {
   };
 
   const getCalendarDays = () => {
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
-    const days = Array(firstDay).fill({ day: null, completed: false });
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateString = new Date(now.getFullYear(), now.getMonth(), day).toISOString().split('T')[0];
-      days.push({ day, completed: completedDays.includes(dateString) });
-    }
-    return days;
-  };
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = domingo
+  
+  const days = [];
+  
+  // Agregar días vacíos al inicio (antes del día 1)
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    days.push({ day: null, completed: false });
+  }
+  
+  // Agregar todos los días del mes
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateString = new Date(year, month, day).toISOString().split('T')[0];
+    days.push({ 
+      day, 
+      completed: completedDays.includes(dateString),
+      isToday: dateString === today
+    });
+  }
+  
+  return days;
+};
 
   const generateDailyCoach = async () => {
     setCoachLoading(true);
@@ -388,16 +405,23 @@ export default function App() {
   };
 
   const toggleTask = (id) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
+console.log('Today is:', today); // Debug
     if (completedDays.includes(today)) { Alert.alert('¡Ya completaste hoy! 🎉', 'Regresa mañana.'); return; }
     setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
   };
 
   const handleComplete = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    if (completedDays.includes(today)) { Alert.alert('¡Ya completaste hoy! 🎉'); return; }
-    if (!tasks.every(t => t.completed)) return;
-    const newStreak = streak + 1;
+  const today = new Date().toLocaleDateString('en-CA');
+  if (completedDays.includes(today)) { Alert.alert('¡Ya completaste hoy! 🎉'); return; }
+  if (!tasks.every(t => t.completed)) return;
+  
+  // Calcular streak correctamente
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toLocaleDateString('en-CA');
+  
+  const newStreak = completedDays.includes(yesterdayStr) ? streak + 1 : 1;
     setStreak(newStreak);
     if (newStreak > bestStreak) setBestStreak(newStreak);
     const newCompletedDays = [...completedDays, today];
@@ -428,9 +452,9 @@ export default function App() {
   const moveTaskDown = (i) => { if (i < editingTasks.length - 1) { const t = [...editingTasks]; [t[i], t[i+1]] = [t[i+1], t[i]]; setEditingTasks(t); } };
 
   const monthlyStats = getMonthlyStats();
-  const calendarDays = getCalendarDays();
-  const allCompleted = tasks.every(t => t.completed);
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleDateString('en-CA');
+const calendarDays = getCalendarDays();
+const allCompleted = tasks.every(t => t.completed);
 
   // ==================== AUTH ====================
   if (!user) {
@@ -616,7 +640,7 @@ export default function App() {
               {calendarDays.map((item, i) => (
                 <View key={i} style={[styles.calendarDay, item.day===null && styles.emptyDay, item.completed && styles.completedDay, !item.completed && item.day!==null && styles.incompleteDay]}>
                   {item.day!==null && <Text style={[styles.calendarDayText, item.completed && styles.completedDayText]}>{item.day}</Text>}
-                  {item.completed && <Text style={styles.checkmarkOverlay}>✓</Text>}
+                  {/* Marca eliminada - color verde indica completado */}
                 </View>
               ))}
             </View>
@@ -793,14 +817,14 @@ function getStyles(theme) {
     calendarCard: { backgroundColor: theme.bgCard, borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: theme.border },
     weekDaysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 12 },
     weekDayText: { fontSize: 12, fontWeight: '600', color: theme.textMuted, width: '14%', textAlign: 'center' },
-    calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-    calendarDay: { width: '14%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 8, position: 'relative' },
+    calendarGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, width: '100%' },
+calendarDay: { width: '100%', aspectRatio: '1', justifyContent: 'center', alignItems: 'center', borderRadius: 8, position: 'relative', display: 'flex' },
     emptyDay: { backgroundColor: 'transparent' },
     completedDay: { backgroundColor: theme.green },
     incompleteDay: { backgroundColor: theme.bgSecondary },
     calendarDayText: { fontSize: 12, fontWeight: '600', color: theme.textSecondary },
     completedDayText: { color: '#000', fontWeight: '700' },
-    checkmarkOverlay: { position: 'absolute', fontSize: 14, fontWeight: '700', color: '#000' },
+    checkmarkOverlay: { display: 'none' }, // Marca eliminada (día verde = completado)
 
     // ── Settings ──────────────────────────────────────────────
     section: { marginBottom: 24 },

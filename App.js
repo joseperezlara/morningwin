@@ -202,7 +202,7 @@ const coachService = new CoachService();
 class BackendService {
   async callCompleteDay(uid, token, input) {
     try {
-      const response = await fetch('http://localhost:5001/morningwin-app/us-central1/completeDay', {
+      const response = await fetch('https://completeday-din4qeecka-uc.a.run.app', {
         method: 'POST',
         headers: {
   'Content-Type': 'application/json',

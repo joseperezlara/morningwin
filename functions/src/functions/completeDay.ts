@@ -41,11 +41,18 @@ export interface CompleteDayResponse {
   }
 }
 
-const corsHandler = cors({ origin: true })
+export const completeDay = functions.https.onRequest(async (req, res) => {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-export const completeDay = functions.https.onRequest((req, res) => {
-  corsHandler(req, res, async () => {
-    try {
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  try {
       // Desarrollo: obtén UID del header o usa default
       const uid = (req.headers['x-user-id'] as string) || 'test-user-123'
 
@@ -230,4 +237,3 @@ transaction.update(userRef, {
       res.status(500).json({ error: error.message })
     }
   })
-})

@@ -1,3 +1,4 @@
+// v2 - Force rebuild timestamp: 2026-02-21T20:30:00Z
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Switch, Alert, Modal, ActivityIndicator, Share, useColorScheme } from 'react-native';
 import { initializeApp } from 'firebase/app';

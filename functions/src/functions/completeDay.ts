@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions'
 import * as admin from 'firebase-admin'
+import cors from 'cors'
 import { 
   Task, 
   ScoreResult, 
@@ -10,6 +11,10 @@ import {
 import { calcScore } from '../scoring/calcScore'
 import { updateStreak } from '../scoring/updateStreak'
 import { computeLevel } from '../scoring/computeLevel'
+
+if (!admin.apps.length) {
+  admin.initializeApp()
+}
 
 export interface CompleteDayInput {
   dateId: string
@@ -36,28 +41,23 @@ export interface CompleteDayResponse {
   }
 }
 
-export const completeDay = functions.https.onRequest(
-  async (req, res) => {
+const corsHandler = cors({ origin: true })
+
+export const completeDay = functions.https.onRequest((req, res) => {
+  corsHandler(req, res, async () => {
     try {
-      const authHeader = req.headers.authorization
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        res.status(401).json({ error: 'Unauthenticated' })
-        return
-      }
+      // Desarrollo: obtén UID del header o usa default
+      const uid = (req.headers['x-user-id'] as string) || 'test-user-123'
 
-      const token = authHeader.substring(7)
-      let decodedToken
-      try {
-        decodedToken = await admin.auth().verifyIdToken(token)
-      } catch (error) {
-        res.status(401).json({ error: 'Invalid token' })
-        return
-      }
-
-      const uid = decodedToken.uid
       const data = req.body as CompleteDayInput
-
       const db = admin.firestore()
+     
+
+// Conectar al emulator si está disponible
+if (process.env.FIRESTORE_EMULATOR_HOST) {
+  console.log('Connecting to Firestore emulator at:', process.env.FIRESTORE_EMULATOR_HOST);
+}
+
       const { dateId, timezone, completedAt, tasksTotal, tasksCompleted, tasksSnapshot } = data
 
       if (!dateId || !/^\d{4}-\d{2}-\d{2}$/.test(dateId)) {
@@ -164,7 +164,6 @@ export const completeDay = functions.https.onRequest(
           coach: {
             available: false,
             state: 'new',
-            coachId: undefined
           },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -190,15 +189,23 @@ export const completeDay = functions.https.onRequest(
         currentMonth.completedDays += 1
         currentMonth.completionRate = currentMonth.completedDays / currentMonth.totalDays
 
-        transaction.update(userRef, {
-          totalScore: newTotalScore,
-          currentStreak: streakResult.streakAfter,
-          bestStreak: newBestStreak,
-          level: levelAfter,
-          monthly: currentMonth,
-          lastActiveAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        })
+        // Actualizar completedDays array
+
+const userCompletedDays = (userData.completedDays || [])
+if (!userCompletedDays.includes(dateId)) {
+  userCompletedDays.push(dateId)
+}
+
+transaction.update(userRef, {
+  totalScore: newTotalScore,
+  currentStreak: streakResult.streakAfter,
+  bestStreak: newBestStreak,
+  level: levelAfter,
+  monthly: currentMonth,
+  lastActiveAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  completedDays: userCompletedDays
+})
 
         return {
           ok: true,
@@ -222,5 +229,5 @@ export const completeDay = functions.https.onRequest(
       console.error('completeDay error:', error)
       res.status(500).json({ error: error.message })
     }
-  }
-)
+  })
+})

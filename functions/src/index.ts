@@ -75,6 +75,7 @@ import * as logger from "firebase-functions/logger";
 // In the v1 API, each function can only serve one request per container, so
 // this will be the maximum concurrent request count.
 setGlobalOptions({ maxInstances: 10 });
+export { completeDay } from "./functions/completeDay";
 
 // export const helloWorld = onRequest((request, response) => {
 //   logger.info("Hello logs!", {structuredData: true});

@@ -1,1 +1,1 @@
-export {};
+export { completeDay } from "./functions/completeDay";

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Switch, Alert, Modal, ActivityIndicator, Share, useColorScheme } from 'react-native';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, connectFirestoreEmulator } from 'firebase/firestore';
 
 const firebaseConfig = {
   projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || 'morningwin-app',
@@ -18,6 +18,20 @@ try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
+  try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  
+  // Conectar al emulator
+  if (location.hostname === 'localhost') {
+    connectFirestoreEmulator(db, 'localhost', 8080);
+  }
+  
+  console.log('Firebase initialized successfully');
+} catch (error) {
+  console.error('Firebase initialization error:', error);
+}
   console.log('Firebase initialized successfully');
 } catch (error) {
   console.error('Firebase initialization error:', error);
@@ -185,6 +199,32 @@ class CoachService {
 }
 const coachService = new CoachService();
 
+class BackendService {
+  async callCompleteDay(uid, token, input) {
+    try {
+      const response = await fetch('http://localhost:5001/morningwin-app/us-central1/completeDay', {
+        method: 'POST',
+        headers: {
+  'Content-Type': 'application/json',
+  'Authorization': `Bearer ${token}`,
+  'x-user-id': uid
+},
+        body: JSON.stringify(input)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Backend error: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Backend call error:', error);
+      throw error;
+    }
+  }
+}
+const backendService = new BackendService();
+
 export default function App() {
   const systemColorScheme = useColorScheme();
   const [user, setUser] = React.useState(null);
@@ -293,7 +333,6 @@ export default function App() {
   setStreak(updated.streak || 0);
   setBestStreak(updated.bestStreak || 0);
   setCompletedDays(updated.completedDays || []);
-  console.log('DEBUG - completedDays from Firebase:', updated.completedDays);
           setReminderTime(updated.reminderTime || '6:00 AM');
           setNotificationsEnabled(updated.notificationsEnabled !== false);
           setSoundEnabled(updated.soundEnabled !== false);
@@ -309,45 +348,8 @@ export default function App() {
       setTimeout(() => { generateDailyCoach(); setAppJustOpened(false); }, 1500);
     }
   }, [user, onboardingComplete, appJustOpened]);
-
-  const getMonthlyStats = () => {
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    let completedInMonth = 0;
-    for (let day = 1; day <= daysInMonth; day++) {
-      if (completedDays.includes(new Date(now.getFullYear(), now.getMonth(), day).toISOString().split('T')[0])) completedInMonth++;
-    }
-    return { completedInMonth, daysInMonth, percentage: Math.round((completedInMonth / daysInMonth) * 100) };
-  };
-
-  const getCalendarDays = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
   
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = domingo
   
-  const days = [];
-  
-  // Agregar días vacíos al inicio (antes del día 1)
-  for (let i = 0; i < firstDayOfWeek; i++) {
-    days.push({ day: null, completed: false });
-  }
-  
-  // Agregar todos los días del mes
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateString = new Date(year, month, day).toISOString().split('T')[0];
-    days.push({ 
-      day, 
-      completed: completedDays.includes(dateString),
-      isToday: dateString === today
-    });
-  }
-  
-  return days;
-};
-
   const generateDailyCoach = async () => {
     setCoachLoading(true);
     try {
@@ -413,24 +415,61 @@ console.log('Today is:', today); // Debug
 
   const handleComplete = async () => {
   const today = new Date().toLocaleDateString('en-CA');
-  if (completedDays.includes(today)) { Alert.alert('¡Ya completaste hoy! 🎉'); return; }
+  if (completedDays.includes(today)) { 
+    Alert.alert('¡Ya completaste hoy! 🎉'); 
+    return; 
+  }
   if (!tasks.every(t => t.completed)) return;
-  
-  // Calcular streak correctamente
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toLocaleDateString('en-CA');
-  
-  const newStreak = completedDays.includes(yesterdayStr) ? streak + 1 : 1;
-    setStreak(newStreak);
-    if (newStreak > bestStreak) setBestStreak(newStreak);
-    const newCompletedDays = [...completedDays, today];
-    setCompletedDays(newCompletedDays);
-    if (user) await firebaseService.updateProgress(user.uid, { streak: newStreak, bestStreak: Math.max(bestStreak, newStreak), completedDays: newCompletedDays });
-    setTasks(tasks.map(t => ({ ...t, completed: false })));
-    if (notificationsEnabled) notificationService.sendNotification('🎉 ¡Mañana Ganada!', { body: `Racha: ${newStreak} días 🔥` });
-    await generateCelebrationCoach();
-  };
+
+  setIsLoading(true);
+  try {
+    // Get Firebase ID token
+    const idToken = await auth.currentUser.getIdToken();
+    
+    // Prepare input for backend
+    const completedAtLocal = new Date().toLocaleTimeString('es-MX', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    const input = {
+      dateId: today,
+      timezone: 'America/Mexico_City',
+      completedAt: new Date().toISOString(),
+      tasksTotal: tasks.length,
+      tasksCompleted: tasks.filter(t => t.completed).length,
+      tasksSnapshot: tasks
+    };
+
+    // Call backend
+    const response = await backendService.callCompleteDay(user.uid, idToken, input);
+    
+    if (response.ok) {
+      // Update local state from backend response
+      setStreak(response.streakAfter);
+      setBestStreak(response.bestStreakAfter);
+      setCompletedDays([...completedDays, today]);
+      setTasks(tasks.map(t => ({ ...t, completed: false })));
+      
+      // Notification
+      if (notificationsEnabled) {
+        notificationService.sendNotification('🎉 ¡Mañana Ganada!', { 
+          body: `Racha: ${response.streakAfter} días 🔥` 
+        });
+      }
+      
+      // Coach celebration
+      await generateCelebrationCoach();
+    } else {
+      throw new Error(response.error || 'Backend error');
+    }
+  } catch (error) {
+    console.error('handleComplete error:', error);
+    Alert.alert('Error', 'No se pudo completar. Intenta de nuevo.');
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const openEditRoutine = () => { setEditingTasks(JSON.parse(JSON.stringify(tasks))); setShowEditModal(true); };
   const saveEditedRoutine = async () => {
@@ -451,8 +490,35 @@ console.log('Today is:', today); // Debug
   const moveTaskUp = (i) => { if (i > 0) { const t = [...editingTasks]; [t[i], t[i-1]] = [t[i-1], t[i]]; setEditingTasks(t); } };
   const moveTaskDown = (i) => { if (i < editingTasks.length - 1) { const t = [...editingTasks]; [t[i], t[i+1]] = [t[i+1], t[i]]; setEditingTasks(t); } };
 
-  const monthlyStats = getMonthlyStats();
-  const today = new Date().toLocaleDateString('en-CA');
+  const getMonthlyStats = () => {
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  let completedInMonth = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    if (completedDays.includes(new Date(now.getFullYear(), now.getMonth(), day).toISOString().split('T')[0])) completedInMonth++;
+  }
+  return { completedInMonth, daysInMonth, percentage: Math.round((completedInMonth / daysInMonth) * 100) };
+};
+
+const getCalendarDays = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const days = [];
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    days.push({ day: null, completed: false });
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateString = new Date(year, month, day).toISOString().split('T')[0];
+    days.push({ day, completed: completedDays.includes(dateString), isToday: dateString === today });
+  }
+  return days;
+};
+
+const today = new Date().toLocaleDateString('en-CA');
+const monthlyStats = getMonthlyStats();
 const calendarDays = getCalendarDays();
 const allCompleted = tasks.every(t => t.completed);
 

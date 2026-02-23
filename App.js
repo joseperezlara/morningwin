@@ -284,6 +284,7 @@ export default function App() {
   const [user, setUser] = React.useState(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [authMode, setAuthMode] = React.useState('login');
+  const [confirmationEmail, setConfirmationEmail] = React.useState('');
   const [errorMessage, setErrorMessage] = React.useState('');
   const [currentScreen, setCurrentScreen] = React.useState('home');
   const [coachScreenVisible, setCoachScreenVisible] = React.useState(false);
@@ -349,18 +350,18 @@ export default function App() {
   };
 
   const handleSignup = async () => {
-    setErrorMessage('');
-    if (!formData.name || !formData.email || !formData.password) { setErrorMessage('Completa todos los campos'); return; }
-    if (formData.password !== formData.confirmPassword) { setErrorMessage('Las contraseñas no coinciden'); return; }
-    if (formData.password.length < 6) { setErrorMessage('Mínimo 6 caracteres'); return; }
-    setIsLoading(true);
-    try {
-      const result = await supabaseService.signup(formData.name, formData.email, formData.password);
-      setUser(result.user);
-      setFormData({ name: '', email: '', password: '', confirmPassword: '' });
-      setOnboardingComplete(true);
-    } catch (e) { setErrorMessage(e.message); } finally { setIsLoading(false); }
-  };
+  setErrorMessage('');
+  if (!formData.name || !formData.email || !formData.password) { setErrorMessage('Completa todos los campos'); return; }
+  if (formData.password !== formData.confirmPassword) { setErrorMessage('Las contraseñas no coinciden'); return; }
+  if (formData.password.length < 6) { setErrorMessage('Mínimo 6 caracteres'); return; }
+  setIsLoading(true);
+  try {
+    const result = await supabaseService.signup(formData.name, formData.email, formData.password);
+    setUser(result.user);
+    setFormData({ name: '', email: '', password: '', confirmPassword: '' });
+    setAuthMode('email-confirmation');
+  } catch (e) { setErrorMessage(e.message); } finally { setIsLoading(false); }
+};
 
   const handleLogin = async () => {
     setErrorMessage('');
@@ -484,6 +485,30 @@ export default function App() {
   const calendarDays = getCalendarDays();
   const allCompleted = tasks.every(t => t.completed);
 
+  // ==================== EMAIL CONFIRMATION ====================
+  if (authMode === 'email-confirmation') {
+    return (
+      <ScrollView style={styles.container}>
+        <View style={styles.authContainer}>
+          <View style={styles.authFormWrapper}>
+            <Text style={styles.authTitle}>Verifica tu Email</Text>
+            <Text style={styles.authSubtitle}>Hemos enviado un link de confirmación a {formData.email}</Text>
+            <View style={styles.confirmationBox}>
+              <Text style={styles.confirmationText}>📧 Revisa tu bandeja de entrada y haz click en el link para confirmar tu cuenta.</Text>
+              <Text style={styles.confirmationSubtext}>El link expira en 24 horas.</Text>
+            </View>
+            <TouchableOpacity style={styles.authButton} onPress={() => { setAuthMode('login'); setFormData({name:'',email:'',password:'',confirmPassword:''}); }}>
+              <Text style={styles.authButtonText}>Ya confirmé mi email</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setAuthMode('signup'); setFormData({name:'',email:'',password:'',confirmPassword:''}); }}>
+              <Text style={styles.toggleAuthText}>¿Usar otro email?</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    );
+  }
+  
   // ==================== AUTH ====================
   if (!user) {
     return (
@@ -884,5 +909,8 @@ function getStyles(theme) {
     editSaveButtonText: { color: theme.btnPrimaryText, fontSize: 16, fontWeight: '700' },
     editCancelButton: { width: '100%', paddingVertical: 14, backgroundColor: theme.btnSecondary, borderRadius: 12, alignItems: 'center', borderWidth: 2, borderColor: theme.btnSecondaryBorder },
     editCancelButtonText: { color: theme.btnSecondaryText, fontSize: 16, fontWeight: '700' },
+    confirmationBox: { width: '100%', backgroundColor: theme.bgCard, borderRadius: 12, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.greenBorder },
+    confirmationText: { fontSize: 16, color: theme.textPrimary, lineHeight: 24, marginBottom: 12 },
+    confirmationSubtext: { fontSize: 14, color: theme.textMuted },
   });
 }

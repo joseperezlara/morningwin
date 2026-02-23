@@ -42,11 +42,25 @@ export interface CompleteDayResponse {
 }
 
 export const completeDay = functions.https.onRequest(async (req, res) => {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', 'https://www.morningwin.app');
+  // Enable CORS for both production and development - Updated 2026-02-23
+  const origin = req.headers.origin || '';
+  const allowedOrigins = [
+    'https://www.morningwin.app',
+    'https://morningwin.app',
+    'http://localhost:8081',
+    'http://localhost:8082',
+    'http://localhost:8083',
+    'http://localhost:19000',
+    'http://localhost:19001'
+  ];
+  
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
 
   if (req.method === 'OPTIONS') {
     res.status(204).send('');

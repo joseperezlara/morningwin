@@ -1,42 +1,12 @@
-// v2 - Force rebuild timestamp: 2026-02-21T20:30:00Z
+// MorningWin with Supabase - v3
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Switch, Alert, Modal, ActivityIndicator, Share, useColorScheme } from 'react-native';
-import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, connectFirestoreEmulator } from 'firebase/firestore';
+import { createClient } from '@supabase/supabase-js';
 
-const firebaseConfig = {
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || 'morningwin-app',
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || 'morningwin-app.firebaseapp.com',
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || 'AIzaSyCesd8LVdz5B28UFHGo-elEwo49w2YeQ2Q',
-  appId: '1:95677741192:web:' + Math.random().toString(36).substring(7),
-};
-
-const CLAUDE_API_KEY = process.env.REACT_APP_CLAUDE_API_KEY || 'fallback-key-for-demo';
-
-let app, auth, db;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  
-  // Conectar al emulator
-  if (location.hostname === 'localhost') {
-    connectFirestoreEmulator(db, 'localhost', 8080);
-  }
-  
-  console.log('Firebase initialized successfully');
-} catch (error) {
-  console.error('Firebase initialization error:', error);
-}
-  console.log('Firebase initialized successfully');
-} catch (error) {
-  console.error('Firebase initialization error:', error);
-}
+// Supabase Config
+const SUPABASE_URL = 'https://hzmeifzruvsbjuozfetm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_yElmBK06lvYY-GYYcYRpfw_PJkIct-_';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const THEMES = {
   light: {
@@ -78,8 +48,8 @@ class NotificationService {
 }
 const notificationService = new NotificationService();
 
-class FirebaseService {
-  constructor() { this.currentUser = null; this.unsubscribeAuth = null; this.unsubscribeProgress = null; }
+class SupabaseService {
+  constructor() { this.currentUser = null; }
 
   isValidEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -92,104 +62,209 @@ class FirebaseService {
     return email.split('@')[0].length >= 2 && domain.length >= 5;
   }
 
-  onAuthStateChanged(callback) {
-    if (!auth) { callback(null); return; }
-    this.unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        this.currentUser = { uid: user.uid, email: user.email, name: user.displayName || user.email.split('@')[0], createdAt: user.metadata.creationTime };
-      } else { this.currentUser = null; }
-      callback(user);
-    });
-  }
-
   async signup(name, email, password) {
     if (!name || name.trim().length < 2) throw new Error('El nombre debe tener al menos 2 caracteres');
     if (!this.isValidEmail(email)) throw new Error('Email no válido');
     if (!password || password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres');
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    const userProgress = {
-      uid: user.uid, name, email, streak: 0, bestStreak: 0, completedDays: [],
-      reminderTime: '6:00 AM', notificationsEnabled: true, soundEnabled: true, darkMode: null,
-      customTasks: [
-        { id: '1', title: 'Wake up (on time)', order: 1 }, { id: '2', title: 'Make bed', order: 2 },
-        { id: '3', title: 'Drink water', order: 3 }, { id: '4', title: 'Move body (5 min)', order: 4 },
-        { id: '5', title: 'No phone (10 min)', order: 5 },
-      ],
-      createdAt: new Date().toISOString(), lastUpdate: new Date().toISOString()
-    };
-    await setDoc(doc(db, 'users', user.uid), userProgress);
-    this.currentUser = { uid: user.uid, email, name, createdAt: new Date().toISOString() };
-    return { user: this.currentUser, uid: user.uid, progress: userProgress };
+
+    // Sign up with Supabase Auth
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name }
+      }
+    });
+
+    if (error) throw new Error(error.message);
+
+    // Create user profile
+    const { error: profileError } = await supabase
+      .from('users')
+      .insert([{
+        id: data.user.id,
+        uid: data.user.id,
+        email,
+        name,
+        current_streak: 0,
+        best_streak: 0,
+        total_score: 0,
+        level: 1,
+        completed_days: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+
+    if (profileError) throw new Error(profileError.message);
+
+    this.currentUser = { uid: data.user.id, email, name, createdAt: new Date().toISOString() };
+    return { user: this.currentUser, uid: data.user.id };
   }
 
   async login(email, password) {
     if (!email || !password) throw new Error('Email y contraseña requeridos');
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    const userDocSnap = await getDoc(doc(db, 'users', user.uid));
-    if (!userDocSnap.exists()) throw new Error('Datos de usuario no encontrados');
-    const userData = userDocSnap.data();
-    this.currentUser = { uid: user.uid, email: userData.email, name: userData.name, createdAt: userData.createdAt };
-    return { user: this.currentUser, progress: userData };
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) throw new Error(error.message);
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', data.user.id)
+      .single();
+
+    if (userError) throw new Error('User profile not found');
+
+    this.currentUser = { uid: user.id, email: user.email, name: user.name, createdAt: user.created_at };
+    return { user: this.currentUser, progress: user };
   }
 
   async logout() {
-    if (this.unsubscribeAuth) this.unsubscribeAuth();
-    if (this.unsubscribeProgress) this.unsubscribeProgress();
-    await signOut(auth);
+    await supabase.auth.signOut();
     this.currentUser = null;
   }
 
-  async updateProgress(uid, progressData) {
-    const updateData = { ...progressData, lastUpdate: new Date().toISOString() };
-    await setDoc(doc(db, 'users', uid), updateData, { merge: true });
-    return updateData;
+  async getProgress(userId) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) return null;
+    return data;
   }
 
-  async getProgress(uid) {
-    const userDocSnap = await getDoc(doc(db, 'users', uid));
-    if (!userDocSnap.exists()) return {
-      uid, streak: 0, bestStreak: 0, completedDays: [], reminderTime: '6:00 AM',
-      notificationsEnabled: true, soundEnabled: true, darkMode: null,
-      customTasks: [
-        { id: '1', title: 'Wake up (on time)', order: 1 }, { id: '2', title: 'Make bed', order: 2 },
-        { id: '3', title: 'Drink water', order: 3 }, { id: '4', title: 'Move body (5 min)', order: 4 },
-        { id: '5', title: 'No phone (10 min)', order: 5 },
-      ]
-    };
-    return userDocSnap.data();
+  async updateProgress(userId, progressData) {
+    const { error } = await supabase
+      .from('users')
+      .update({ ...progressData, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) throw new Error(error.message);
   }
 
-  listenToProgress(uid, callback) {
-    this.unsubscribeProgress = onSnapshot(doc(db, 'users', uid), (snap) => {
-      if (snap.exists()) callback(snap.data());
-    });
-    return this.unsubscribeProgress;
-  }
-}
-const firebaseService = new FirebaseService();
-
-class CoachService {
-  async generateCoachMessage(userName, streak, bestStreak, monthlyCompletion, context = 'daily') {
+  async completeDaySupabase(userId, dateId, input) {
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': CLAUDE_API_KEY },
-        body: JSON.stringify({
-          model: 'claude-opus-4-5-20251101', max_tokens: 200,
-          system: `Eres un entrenador personal motivacional. Máximo 3 líneas. Usa emojis. Menciona el nombre. No hagas listas.`,
-          messages: [{ role: 'user', content: `Usuario: ${userName}, Racha: ${streak} días, Mejor: ${bestStreak}, Mes: ${monthlyCompletion}%. Contexto: ${context}. Genera UN mensaje motivacional.` }]
+      // Get user
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (userError) throw userError;
+
+      // Check if already completed today
+      const { data: existingLog } = await supabase
+        .from('daily_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('date_id', dateId)
+        .single();
+
+      if (existingLog && existingLog.status === 'completed') {
+        return {
+          ok: true,
+          streakAfter: existingLog.streak_after,
+          bestStreakAfter: user.best_streak,
+          score: existingLog.score,
+          levelAfter: existingLog.level_after,
+          zoneAfter: existingLog.zone
+        };
+      }
+
+      // Calculate score (simple formula for now)
+      const completedAtLocal = new Date(input.completedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+      const finalScore = input.tasksCompleted === input.tasksTotal ? 100 : input.tasksCompleted * 20;
+      const scoreResult = {
+        tasksCompleted: input.tasksCompleted,
+        tasksTotal: input.tasksTotal,
+        completedAtLocal,
+        finalScore,
+        bonus: input.tasksCompleted === input.tasksTotal ? 20 : 0
+      };
+
+      // Calculate streak
+      const yesterday = new Date(dateId);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayId = yesterday.toISOString().split('T')[0];
+
+      const { data: yesterdayLog } = await supabase
+        .from('daily_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('date_id', yesterdayId)
+        .single();
+
+      const yesterdayCompleted = yesterdayLog?.status === 'completed';
+      const newStreak = yesterdayCompleted ? (user.current_streak || 0) + 1 : 1;
+      const newBestStreak = Math.max(user.best_streak || 0, newStreak);
+
+      // Create daily log
+      const { data: newLog, error: logError } = await supabase
+        .from('daily_logs')
+        .insert([{
+          user_id: userId,
+          date_id: dateId,
+          status: 'completed',
+          tasks_total: input.tasksTotal,
+          tasks_completed: input.tasksCompleted,
+          tasks_snapshot: input.tasksSnapshot,
+          completed_at: input.completedAt,
+          completed_at_local: completedAtLocal,
+          score: scoreResult,
+          streak_after: newStreak,
+          level_after: 1,
+          zone: 'active',
+          coach: { available: false, state: 'new' }
+        }])
+        .select()
+        .single();
+
+      if (logError) throw logError;
+
+      // Update user
+      const completedDays = user.completed_days || [];
+      if (!completedDays.includes(dateId)) {
+        completedDays.push(dateId);
+      }
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          current_streak: newStreak,
+          best_streak: newBestStreak,
+          total_score: (user.total_score || 0) + finalScore,
+          completed_days: completedDays,
+          last_active_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
-      });
-      if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-      const data = await response.json();
-      return data.content[0].text;
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      return {
+        ok: true,
+        streakAfter: newStreak,
+        bestStreakAfter: newBestStreak,
+        score: scoreResult,
+        levelAfter: 1,
+        zoneAfter: 'active'
+      };
     } catch (error) {
-      return this.getFallbackMessage(userName, streak, context);
+      console.error('completeDaySupabase error:', error);
+      throw error;
     }
   }
+}
+const supabaseService = new SupabaseService();
 
+class CoachService {
   getFallbackMessage(userName, streak, context) {
     if (context === 'celebration') return `¡${userName}! 🔥 ¡LO HICISTE! Racha de ${streak} días. Eres IMPARABLE.`;
     if (streak === 0) return `Hola ${userName} 👋 Hoy es tu primer día. ¿Vamos? 🚀`;
@@ -197,34 +272,12 @@ class CoachService {
     if (streak < 30) return `${userName}, ${streak} días. NO ES ACCIDENTE, ES DISCIPLINA. 💪`;
     return `${userName}, ${streak} DÍAS. 👑 Ya eres una MÁQUINA.`;
   }
-}
-const coachService = new CoachService();
 
-class BackendService {
-  async callCompleteDay(uid, token, input) {
-    try {
-      const response = await fetch('https://completeday-din4qeecka-uc.a.run.app', {
-        method: 'POST',
-        headers: {
-  'Content-Type': 'application/json',
-  'Authorization': `Bearer ${token}`,
-  'x-user-id': uid
-},
-        body: JSON.stringify(input)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Backend error: ${response.statusText}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Backend call error:', error);
-      throw error;
-    }
+  async generateCoachMessage(userName, streak, bestStreak, monthlyCompletion, context = 'daily') {
+    return this.getFallbackMessage(userName, streak, context);
   }
 }
-const backendService = new BackendService();
+const coachService = new CoachService();
 
 export default function App() {
   const systemColorScheme = useColorScheme();
@@ -262,119 +315,37 @@ export default function App() {
   const theme = isDark ? THEMES.dark : THEMES.light;
   const styles = getStyles(theme);
 
-  // Fix definitivo: forzar scrollbar siempre visible para centrado consistente entre pantallas
-  // El problema: Coach tiene poco contenido (sin scrollbar), otras pantallas tienen scrollbar.
-  // El scrollbar ocupa ~15px, moviendo el centrado del pageWrapper.
-  // Solución: CSS global que reserva el espacio del scrollbar siempre.
   React.useEffect(() => {
     if (typeof document !== 'undefined') {
-      // Método 1: scrollbar-gutter en html/body
       document.documentElement.style.scrollbarGutter = 'stable';
       document.body.style.scrollbarGutter = 'stable';
-      // Método 2: inyectar CSS global como fallback para todos los navegadores
-      const styleId = 'morningwin-scrollfix';
-      if (!document.getElementById(styleId)) {
-        // React Native Web genera clases CSS atómicas para overflow.
-        // Buscamos la clase exacta que define overflow-y:auto y la sobrescribimos con scroll.
-        // Esto hace que el scrollbar siempre esté visible, evitando que el centrado salte.
-        const findAndFixScrollClass = () => {
-          let fixed = false;
-          Array.from(document.styleSheets).forEach(sheet => {
-            try {
-              Array.from(sheet.cssRules || []).forEach(rule => {
-                if (rule.style && rule.style.overflowY === 'auto' && rule.selectorText) {
-                  const style = document.createElement('style');
-                  style.id = styleId;
-                  style.textContent = `${rule.selectorText} { overflow-y: scroll !important; }`;
-                  document.head.appendChild(style);
-                  fixed = true;
-                }
-              });
-            } catch(e) {}
-          });
-          return fixed;
-        };
-        
-        // Intentar inmediatamente, y si no hay estilos cargados aún, reintentar
-        if (!findAndFixScrollClass()) {
-          setTimeout(findAndFixScrollClass, 100);
-          setTimeout(findAndFixScrollClass, 500);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        const progress = await supabaseService.getProgress(authUser.id);
+        if (progress) {
+          setUser({ uid: authUser.id, email: authUser.email, name: progress.name, createdAt: progress.created_at });
+          setStreak(progress.current_streak || 0);
+          setBestStreak(progress.best_streak || 0);
+          setCompletedDays(progress.completed_days || []);
+          setReminderTime(progress.reminder_time || '6:00 AM');
+          setNotificationsEnabled(progress.notifications_enabled !== false);
+          setSoundEnabled(progress.sound_enabled !== false);
+          setOnboardingComplete(true);
         }
       }
-    }
+    };
+    checkAuth();
   }, []);
 
   const handleDarkModeToggle = async (value) => {
     const newOverride = value === (systemColorScheme === 'dark') ? null : value;
     setDarkModeOverride(newOverride);
-    if (user) await firebaseService.updateProgress(user.uid, { darkMode: newOverride });
-  };
-
-  const loadUserData = async (userProgress) => {
-    setStreak(userProgress.streak || 0);
-    setBestStreak(userProgress.bestStreak || 0);
-    setCompletedDays(userProgress.completedDays || []);
-    setReminderTime(userProgress.reminderTime || '6:00 AM');
-    setNotificationsEnabled(userProgress.notificationsEnabled !== false);
-    setSoundEnabled(userProgress.soundEnabled !== false);
-    if (userProgress.darkMode !== undefined) setDarkModeOverride(userProgress.darkMode);
-    if (userProgress.customTasks?.length > 0) {
-      setTasks(userProgress.customTasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(t => ({ ...t, completed: false })));
-    }
-    setOnboardingComplete(true);
-  };
-
-  React.useEffect(() => {
-    firebaseService.onAuthStateChanged(async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseService.currentUser);
-        const progress = await firebaseService.getProgress(firebaseUser.uid);
-        if (progress) await loadUserData(progress);
-        firebaseService.listenToProgress(firebaseUser.uid, (updated) => {
-  setStreak(updated.streak || 0);
-  setBestStreak(updated.bestStreak || 0);
-  setCompletedDays(updated.completedDays || []);
-          setReminderTime(updated.reminderTime || '6:00 AM');
-          setNotificationsEnabled(updated.notificationsEnabled !== false);
-          setSoundEnabled(updated.soundEnabled !== false);
-          if (updated.darkMode !== undefined) setDarkModeOverride(updated.darkMode);
-          if (updated.customTasks?.length > 0) setTasks(updated.customTasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(t => ({ ...t, completed: false })));
-        });
-      } else { setUser(null); setOnboardingComplete(false); }
-    });
-  }, []);
-
-  React.useEffect(() => {
-    if (user && onboardingComplete && appJustOpened) {
-      setTimeout(() => { generateDailyCoach(); setAppJustOpened(false); }, 1500);
-    }
-  }, [user, onboardingComplete, appJustOpened]);
-  
-  
-  const generateDailyCoach = async () => {
-    setCoachLoading(true);
-    try {
-      const stats = getMonthlyStats();
-      const message = await coachService.generateCoachMessage(user.name, streak, bestStreak, stats.percentage, 'daily');
-      setCoachMessage(message);
-      setCurrentScreen('coach');
-      setCoachScreenVisible(true);
-    } catch (e) { console.error(e); } finally { setCoachLoading(false); }
-  };
-
-  const generateCelebrationCoach = async () => {
-    setCoachLoading(true);
-    try {
-      const stats = getMonthlyStats();
-      const message = await coachService.generateCoachMessage(user.name, streak + 1, bestStreak, stats.percentage, 'celebration');
-      setCoachMessage(message);
-      setCurrentScreen('coach');
-      setCoachScreenVisible(true);
-    } catch (e) { console.error(e); } finally { setCoachLoading(false); }
-  };
-
-  const handleShareCoach = async () => {
-    try { await Share.share({ message: `${coachMessage}\n\n🏆 Sigo mis mañanas con MorningWin.\nhttps://morningwin.app` }); } catch (e) { console.error(e); }
+    if (user) await supabaseService.updateProgress(user.uid, { dark_mode: newOverride });
   };
 
   const handleSignup = async () => {
@@ -384,9 +355,10 @@ export default function App() {
     if (formData.password.length < 6) { setErrorMessage('Mínimo 6 caracteres'); return; }
     setIsLoading(true);
     try {
-      const result = await firebaseService.signup(formData.name, formData.email, formData.password);
-      setUser(result.user); await loadUserData(result.progress);
+      const result = await supabaseService.signup(formData.name, formData.email, formData.password);
+      setUser(result.user);
       setFormData({ name: '', email: '', password: '', confirmPassword: '' });
+      setOnboardingComplete(true);
     } catch (e) { setErrorMessage(e.message); } finally { setIsLoading(false); }
   };
 
@@ -395,90 +367,79 @@ export default function App() {
     if (!formData.email || !formData.password) { setErrorMessage('Completa email y contraseña'); return; }
     setIsLoading(true);
     try {
-      const result = await firebaseService.login(formData.email, formData.password);
-      setUser(result.user); await loadUserData(result.progress);
+      const result = await supabaseService.login(formData.email, formData.password);
+      setUser(result.user);
+      setStreak(result.progress.current_streak || 0);
+      setBestStreak(result.progress.best_streak || 0);
+      setCompletedDays(result.progress.completed_days || []);
       setFormData({ name: '', email: '', password: '', confirmPassword: '' });
       setAppJustOpened(true);
+      setOnboardingComplete(true);
     } catch (e) { setErrorMessage(e.message); } finally { setIsLoading(false); }
   };
 
   const handleLogout = async () => {
     setIsLoading(true);
-    try { await firebaseService.logout(); setUser(null); setOnboardingComplete(false); } finally { setIsLoading(false); }
+    try { await supabaseService.logout(); setUser(null); setOnboardingComplete(false); } finally { setIsLoading(false); }
   };
 
   const toggleTask = (id) => {
     const today = new Date().toLocaleDateString('en-CA');
-console.log('Today is:', today); // Debug
     if (completedDays.includes(today)) { Alert.alert('¡Ya completaste hoy! 🎉', 'Regresa mañana.'); return; }
     setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
   };
 
   const handleComplete = async () => {
-  const today = new Date().toLocaleDateString('en-CA');
-  if (completedDays.includes(today)) { 
-    Alert.alert('¡Ya completaste hoy! 🎉'); 
-    return; 
-  }
-  if (!tasks.every(t => t.completed)) return;
-
-  setIsLoading(true);
-  try {
-    // Get Firebase ID token
-    const idToken = await auth.currentUser.getIdToken();
-    
-    // Prepare input for backend
-    const completedAtLocal = new Date().toLocaleTimeString('es-MX', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-    
-    const input = {
-      dateId: today,
-      timezone: 'America/Mexico_City',
-      completedAt: new Date().toISOString(),
-      tasksTotal: tasks.length,
-      tasksCompleted: tasks.filter(t => t.completed).length,
-      tasksSnapshot: tasks
-    };
-
-    // Call backend
-    const response = await backendService.callCompleteDay(user.uid, idToken, input);
-    
-    if (response.ok) {
-      // Update local state from backend response
-      setStreak(response.streakAfter);
-      setBestStreak(response.bestStreakAfter);
-      setCompletedDays([...completedDays, today]);
-      setTasks(tasks.map(t => ({ ...t, completed: false })));
-      
-      // Notification
-      if (notificationsEnabled) {
-        notificationService.sendNotification('🎉 ¡Mañana Ganada!', { 
-          body: `Racha: ${response.streakAfter} días 🔥` 
-        });
-      }
-      
-      // Coach celebration
-      await generateCelebrationCoach();
-    } else {
-      throw new Error(response.error || 'Backend error');
+    const today = new Date().toLocaleDateString('en-CA');
+    if (completedDays.includes(today)) {
+      Alert.alert('¡Ya completaste hoy! 🎉');
+      return;
     }
-  } catch (error) {
-    console.error('handleComplete error:', error);
-    Alert.alert('Error', 'No se pudo completar. Intenta de nuevo.');
-  } finally {
-    setIsLoading(false);
-  }
-};
+    if (!tasks.every(t => t.completed)) return;
+
+    setIsLoading(true);
+    try {
+      const input = {
+        dateId: today,
+        timezone: 'America/Mexico_City',
+        completedAt: new Date().toISOString(),
+        tasksTotal: tasks.length,
+        tasksCompleted: tasks.filter(t => t.completed).length,
+        tasksSnapshot: tasks
+      };
+
+      const response = await supabaseService.completeDaySupabase(user.uid, today, input);
+
+      if (response.ok) {
+        setStreak(response.streakAfter);
+        setBestStreak(response.bestStreakAfter);
+        setCompletedDays([...completedDays, today]);
+        setTasks(tasks.map(t => ({ ...t, completed: false })));
+
+        if (notificationsEnabled) {
+          notificationService.sendNotification('🎉 ¡Mañana Ganada!', {
+            body: `Racha: ${response.streakAfter} días 🔥`
+          });
+        }
+
+        setCoachMessage(`¡${user.name}! 🔥 ¡LO HICISTE! Racha de ${response.streakAfter} días. Eres IMPARABLE.`);
+        setCurrentScreen('coach');
+        setCoachScreenVisible(true);
+      }
+    } catch (error) {
+      console.error('handleComplete error:', error);
+      Alert.alert('Error', error.message || 'No se pudo completar. Intenta de nuevo.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const openEditRoutine = () => { setEditingTasks(JSON.parse(JSON.stringify(tasks))); setShowEditModal(true); };
   const saveEditedRoutine = async () => {
     if (editingTasks.length === 0) { Alert.alert('Error', 'Debes tener al menos 1 tarea'); return; }
-    const customTasks = editingTasks.map((t, i) => ({ id: t.id, title: t.title, order: i + 1 }));
-    if (user) await firebaseService.updateProgress(user.uid, { customTasks });
     setTasks(editingTasks.map(t => ({ ...t, completed: false })));
-    setShowEditModal(false); setNewTaskTitle('');
+    setShowEditModal(false);
+    setNewTaskTitle('');
     Alert.alert('Éxito', 'Rutina actualizada');
   };
   const addNewTask = () => {
@@ -492,36 +453,36 @@ console.log('Today is:', today); // Debug
   const moveTaskDown = (i) => { if (i < editingTasks.length - 1) { const t = [...editingTasks]; [t[i], t[i+1]] = [t[i+1], t[i]]; setEditingTasks(t); } };
 
   const getMonthlyStats = () => {
-  const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  let completedInMonth = 0;
-  for (let day = 1; day <= daysInMonth; day++) {
-    if (completedDays.includes(new Date(now.getFullYear(), now.getMonth(), day).toISOString().split('T')[0])) completedInMonth++;
-  }
-  return { completedInMonth, daysInMonth, percentage: Math.round((completedInMonth / daysInMonth) * 100) };
-};
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    let completedInMonth = 0;
+    for (let day = 1; day <= daysInMonth; day++) {
+      if (completedDays.includes(new Date(now.getFullYear(), now.getMonth(), day).toISOString().split('T')[0])) completedInMonth++;
+    }
+    return { completedInMonth, daysInMonth, percentage: Math.round((completedInMonth / daysInMonth) * 100) };
+  };
 
-const getCalendarDays = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayOfWeek = new Date(year, month, 1).getDay();
-  const days = [];
-  for (let i = 0; i < firstDayOfWeek; i++) {
-    days.push({ day: null, completed: false });
-  }
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateString = new Date(year, month, day).toISOString().split('T')[0];
-    days.push({ day, completed: completedDays.includes(dateString), isToday: dateString === today });
-  }
-  return days;
-};
+  const getCalendarDays = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayOfWeek = new Date(year, month, 1).getDay();
+    const days = [];
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      days.push({ day: null, completed: false });
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateString = new Date(year, month, day).toISOString().split('T')[0];
+      days.push({ day, completed: completedDays.includes(dateString) });
+    }
+    return days;
+  };
 
-const today = new Date().toLocaleDateString('en-CA');
-const monthlyStats = getMonthlyStats();
-const calendarDays = getCalendarDays();
-const allCompleted = tasks.every(t => t.completed);
+  const today = new Date().toLocaleDateString('en-CA');
+  const monthlyStats = getMonthlyStats();
+  const calendarDays = getCalendarDays();
+  const allCompleted = tasks.every(t => t.completed);
 
   // ==================== AUTH ====================
   if (!user) {
@@ -571,7 +532,7 @@ const allCompleted = tasks.every(t => t.completed);
                 </TouchableOpacity>
               ))}
             </View>
-            <TouchableOpacity style={styles.onboardingButton} onPress={async () => { await firebaseService.updateProgress(user.uid, { reminderTime, onboardingCompleted: true }); setOnboardingComplete(true); }}>
+            <TouchableOpacity style={styles.onboardingButton} onPress={() => { setOnboardingComplete(true); }}>
               <Text style={styles.onboardingButtonText}>¡Empecemos!</Text>
             </TouchableOpacity>
           </View>
@@ -580,12 +541,7 @@ const allCompleted = tasks.every(t => t.completed);
     );
   }
 
-  // ==================== TOP NAV ====================
-  // Siempre 4 elementos: nombre · 🌙/☀️ · ⚙️ · ⏻/🏠
-  // Home: ⚙️ y ⏻ visibles, 🏠 invisible
-  // Secundarias: ⚙️ invisible, 🏠 visible en posición de ⏻
-  // Home:        🌙 · 📊(visible) · ⚙️(visible)  · ⏻(visible)
-  // Secundarias: 🌙 · 📊(invisible) · ⚙️(invisible) · 🏠(visible)
+// ==================== TOP NAV ====================
   const TopNav = ({ onBack = null, showSettings = false, showPower = false, showStats = false }) => (
     <View style={styles.topNav}>
       <TouchableOpacity onPress={() => setCurrentScreen('home')}>
@@ -624,7 +580,7 @@ const allCompleted = tasks.every(t => t.completed);
                     <Text style={styles.coachScreenMessageText}>{coachMessage}</Text>
                   </View>
                   <View style={styles.coachScreenButtons}>
-                    <TouchableOpacity style={styles.coachScreenShareButton} onPress={handleShareCoach}>
+                    <TouchableOpacity style={styles.coachScreenShareButton} onPress={() => Share.share({ message: `${coachMessage}\n\n🏆 Sigo mis mañanas con MorningWin.\nhttps://morningwin.app` })}>
                       <Text style={styles.coachScreenShareButtonText}>📤 Compartir</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.coachScreenCloseButton} onPress={() => { setCurrentScreen('home'); setCoachScreenVisible(false); }}>
@@ -707,7 +663,6 @@ const allCompleted = tasks.every(t => t.completed);
               {calendarDays.map((item, i) => (
                 <View key={i} style={[styles.calendarDay, item.day===null && styles.emptyDay, item.completed && styles.completedDay, !item.completed && item.day!==null && styles.incompleteDay]}>
                   {item.day!==null && <Text style={[styles.calendarDayText, item.completed && styles.completedDayText]}>{item.day}</Text>}
-                  {/* Marca eliminada - color verde indica completado */}
                 </View>
               ))}
             </View>
@@ -735,7 +690,6 @@ const allCompleted = tasks.every(t => t.completed);
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Premium</Text>
             <TouchableOpacity style={styles.coachButtonSettings} onPress={openEditRoutine}><Text style={styles.coachButtonText}>✏ Editar Mi Rutina</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.coachButtonSettings} onPress={generateDailyCoach}><Text style={styles.coachButtonText}>◎ Obtener Mensaje del Coach</Text></TouchableOpacity>
             <View style={styles.premiumCard}>
               <Text style={styles.premiumTitle}>Actualiza a Pro</Text>
               <Text style={styles.premiumSubtitle}>$8.99/mes · Stats ilimitadas · Sin ads</Text>
@@ -746,11 +700,11 @@ const allCompleted = tasks.every(t => t.completed);
             <Text style={styles.sectionTitle}>Notificaciones</Text>
             <View style={styles.settingItem}>
               <View style={styles.settingLabel}><Text style={styles.settingTitle}>Notificaciones Push</Text><Text style={styles.settingSubtitle}>Recordatorio diario a las {reminderTime}</Text></View>
-              <Switch value={notificationsEnabled} onValueChange={async v => { setNotificationsEnabled(v); await firebaseService.updateProgress(user.uid, {notificationsEnabled: v}); }} trackColor={{false: theme.switchTrackOff, true: theme.switchTrackOn}} thumbColor={notificationsEnabled ? theme.switchThumbOn : theme.switchThumbOff} />
+              <Switch value={notificationsEnabled} onValueChange={async v => { setNotificationsEnabled(v); await supabaseService.updateProgress(user.uid, {notifications_enabled: v}); }} trackColor={{false: theme.switchTrackOff, true: theme.switchTrackOn}} thumbColor={notificationsEnabled ? theme.switchThumbOn : theme.switchThumbOff} />
             </View>
             <View style={styles.settingItem}>
               <View style={styles.settingLabel}><Text style={styles.settingTitle}>Sonido</Text><Text style={styles.settingSubtitle}>Sonido en notificaciones</Text></View>
-              <Switch value={soundEnabled} onValueChange={async v => { setSoundEnabled(v); await firebaseService.updateProgress(user.uid, {soundEnabled: v}); }} trackColor={{false: theme.switchTrackOff, true: theme.switchTrackOn}} thumbColor={soundEnabled ? theme.switchThumbOn : theme.switchThumbOff} disabled={!notificationsEnabled} />
+              <Switch value={soundEnabled} onValueChange={async v => { setSoundEnabled(v); await supabaseService.updateProgress(user.uid, {sound_enabled: v}); }} trackColor={{false: theme.switchTrackOff, true: theme.switchTrackOn}} thumbColor={soundEnabled ? theme.switchThumbOn : theme.switchThumbOff} disabled={!notificationsEnabled} />
             </View>
           </View>
           <View style={styles.section}>
@@ -804,11 +758,8 @@ const allCompleted = tasks.every(t => t.completed);
 // ==================== STYLES ====================
 function getStyles(theme) {
   return StyleSheet.create({
-    // ── Global ────────────────────────────────────────────────
     container: { flex: 1, backgroundColor: theme.bg, width: '100%', overflowY: 'scroll' },
     pageWrapper: { width: '100%', maxWidth: 760, alignSelf: 'center', paddingHorizontal: 20 },
-
-    // ── TopNav ────────────────────────────────────────────────
     topNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: theme.border, marginBottom: 24 },
     topNavName: { fontSize: 18, fontWeight: '900', color: theme.textPrimary, letterSpacing: -0.5 },
     topNavRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
@@ -821,8 +772,6 @@ function getStyles(theme) {
     pageTitle: { fontSize: 28, fontWeight: '800', color: theme.textPrimary, marginBottom: 24 },
     homeDate: { marginBottom: 16 },
     date: { fontSize: 14, color: theme.textMuted },
-
-    // ── Auth ──────────────────────────────────────────────────
     authContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 40, width: '100%' },
     authFormWrapper: { width: '100%', maxWidth: 420, alignSelf: 'center', paddingHorizontal: 20 },
     authTitle: { fontSize: 32, fontWeight: '900', color: theme.textPrimary, marginBottom: 10, textAlign: 'center' },
@@ -834,8 +783,6 @@ function getStyles(theme) {
     authButtonDisabled: { opacity: 0.5 },
     authButtonText: { color: theme.btnPrimaryText, fontSize: 16, fontWeight: '700' },
     toggleAuthText: { fontSize: 14, color: theme.blue, textAlign: 'center', marginTop: 10 },
-
-    // ── Onboarding ────────────────────────────────────────────
     onboardingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 40 },
     onboardingTitle: { fontSize: 32, fontWeight: '900', color: theme.textPrimary, marginBottom: 10, textAlign: 'center' },
     onboardingSubtitle: { fontSize: 16, color: theme.textMuted, marginBottom: 40, textAlign: 'center' },
@@ -849,8 +796,6 @@ function getStyles(theme) {
     timeButtonTextActive: { color: theme.btnPrimaryText },
     onboardingButton: { width: '100%', paddingVertical: 16, backgroundColor: theme.btnPrimary, borderRadius: 12, alignItems: 'center' },
     onboardingButtonText: { color: theme.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-
-    // ── Home ──────────────────────────────────────────────────
     streakContainer: { alignItems: 'center', marginBottom: 30 },
     streakEmoji: { fontSize: 40, marginBottom: 8 },
     streakNumber: { fontSize: 48, fontWeight: '900', color: theme.textPrimary },
@@ -869,8 +814,6 @@ function getStyles(theme) {
     completeButton: { paddingVertical: 18, paddingHorizontal: 20, backgroundColor: theme.bgDisabled, borderRadius: 12, alignItems: 'center', marginBottom: 30 },
     completeButtonActive: { backgroundColor: theme.btnPrimary },
     completeButtonText: { color: theme.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-
-    // ── Stats ─────────────────────────────────────────────────
     statCard: { backgroundColor: theme.bgCard, borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: theme.border },
     statLabel: { fontSize: 12, color: theme.textMuted, fontWeight: '600', marginBottom: 12, textTransform: 'uppercase' },
     statRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -885,15 +828,12 @@ function getStyles(theme) {
     weekDaysHeader: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 12 },
     weekDayText: { fontSize: 12, fontWeight: '600', color: theme.textMuted, width: '14%', textAlign: 'center' },
     calendarGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, width: '100%' },
-calendarDay: { width: '100%', aspectRatio: '1', justifyContent: 'center', alignItems: 'center', borderRadius: 8, position: 'relative', display: 'flex' },
+    calendarDay: { width: '100%', aspectRatio: '1', justifyContent: 'center', alignItems: 'center', borderRadius: 8, position: 'relative', display: 'flex' },
     emptyDay: { backgroundColor: 'transparent' },
     completedDay: { backgroundColor: theme.green },
     incompleteDay: { backgroundColor: theme.bgSecondary },
     calendarDayText: { fontSize: 12, fontWeight: '600', color: theme.textSecondary },
     completedDayText: { color: '#000', fontWeight: '700' },
-    checkmarkOverlay: { display: 'none' }, // Marca eliminada (día verde = completado)
-
-    // ── Settings ──────────────────────────────────────────────
     section: { marginBottom: 24 },
     sectionTitle: { fontSize: 14, fontWeight: '700', color: theme.textPrimary, marginBottom: 12, textTransform: 'uppercase' },
     profileCard: { backgroundColor: theme.bgCard, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: theme.border },
@@ -914,9 +854,6 @@ calendarDay: { width: '100%', aspectRatio: '1', justifyContent: 'center', alignI
     logoutButton: { paddingVertical: 16, paddingHorizontal: 20, backgroundColor: theme.bgSecondary, borderRadius: 12, alignItems: 'center', borderWidth: 2, borderColor: theme.borderInput },
     logoutButtonText: { fontSize: 16, fontWeight: '700', color: theme.textPrimary },
     spacer: { height: 20 },
-
-    // ── Coach Screen ──────────────────────────────────────────
-    // CLAVE: width: '100%' en TODOS los elementos para que coincida con pageWrapper
     coachScreenContent: { width: '100%', paddingVertical: 40 },
     coachMessageBox: { width: '100%', backgroundColor: theme.bgCard, borderRadius: 16, padding: 24, marginBottom: 30, borderWidth: 1, borderColor: theme.border },
     coachScreenMessageText: { fontSize: 16, color: theme.textPrimary, lineHeight: 24, textAlign: 'center' },
@@ -925,8 +862,6 @@ calendarDay: { width: '100%', aspectRatio: '1', justifyContent: 'center', alignI
     coachScreenShareButtonText: { color: theme.btnSecondaryText, fontSize: 16, fontWeight: '700' },
     coachScreenCloseButton: { width: '100%', paddingVertical: 14, backgroundColor: theme.btnPrimary, borderRadius: 12, alignItems: 'center' },
     coachScreenCloseButtonText: { color: theme.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-
-    // ── Edit Routine Screen ───────────────────────────────────
     editScreenContent: { width: '100%', paddingVertical: 20 },
     editSectionTitle: { fontSize: 14, fontWeight: '700', color: theme.textPrimary, marginBottom: 12, marginTop: 20, textTransform: 'uppercase' },
     tasksEditList: { gap: 12, marginBottom: 20 },

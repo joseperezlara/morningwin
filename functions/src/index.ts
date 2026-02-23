@@ -76,6 +76,7 @@ import * as logger from "firebase-functions/logger";
 // this will be the maximum concurrent request count.
 setGlobalOptions({ maxInstances: 10 });
 export { completeDay } from "./functions/completeDay";
+export { completeDaySupabase } from './functions/supabaseHandler'
 
 // export const helloWorld = onRequest((request, response) => {
 //   logger.info("Hello logs!", {structuredData: true});

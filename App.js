@@ -571,7 +571,7 @@ export default function App() {
   <View style={styles.topNav}>
     <TouchableOpacity onPress={() => setCurrentScreen('home')}>
       <img 
-  src="https://raw.githubusercontent.com/joseperezlara/morningwin/main/assets/logo_sin_letras.png"
+  src="https://raw.githubusercontent.com/joseperezlara/morningwin/main/assets/logo_vivo.png"
   style={styles.topNavLogoImg}
   alt="MorningWin Logo"
 />

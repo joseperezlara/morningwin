@@ -568,10 +568,14 @@ export default function App() {
 
 // ==================== TOP NAV ====================
   const TopNav = ({ onBack = null, showSettings = false, showPower = false, showStats = false }) => (
-    <View style={styles.topNav}>
-      <TouchableOpacity onPress={() => setCurrentScreen('home')}>
-        <Text style={styles.topNavName}>MorningWin</Text>
-      </TouchableOpacity>
+  <View style={styles.topNav}>
+    <TouchableOpacity onPress={() => setCurrentScreen('home')}>
+      <img 
+  src="https://raw.githubusercontent.com/joseperezlara/morningwin/main/assets/logo_sin_letras.png"
+  style={styles.topNavLogoImg}
+  alt="MorningWin Logo"
+/>
+    </TouchableOpacity>
       <View style={styles.topNavRight}>
         <Text style={styles.topNavUser}>{user.name}</Text>
         <TouchableOpacity style={styles.themeToggleBtn} onPress={() => handleDarkModeToggle(!isDark)}>
@@ -912,5 +916,6 @@ function getStyles(theme) {
     confirmationBox: { width: '100%', backgroundColor: theme.bgCard, borderRadius: 12, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: theme.greenBorder },
     confirmationText: { fontSize: 16, color: theme.textPrimary, lineHeight: 24, marginBottom: 12 },
     confirmationSubtext: { fontSize: 14, color: theme.textMuted },
+    topNavLogoImg: { width: 120, height: 50, objectFit: 'contain', backgroundColor: 'transparent' },
   });
 }

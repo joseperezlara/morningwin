@@ -149,118 +149,165 @@ class SupabaseService {
   }
 
   async completeDaySupabase(userId, dateId, input) {
-    try {
-      // Get user
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
+  const startTime = Date.now();
+  const operationId = `complete_${userId}_${dateId}_${Date.now()}`;
+  
+  try {
+    // ==================== VALIDATION PHASE ====================
+    if (!userId || !dateId || !input) {
+      throw new Error('Invalid parameters: userId, dateId, and input are required');
+    }
 
-      if (userError) throw userError;
+    if (!input.completedAt || !input.tasksTotal || input.tasksCompleted === undefined) {
+      throw new Error('Invalid input: missing completedAt, tasksTotal, or tasksCompleted');
+    }
 
-      // Check if already completed today
-      const { data: existingLog } = await supabase
-        .from('daily_logs')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('date_id', dateId)
-        .single();
+    if (input.tasksCompleted < 0 || input.tasksCompleted > input.tasksTotal) {
+      throw new Error('Invalid tasksCompleted: must be between 0 and tasksTotal');
+    }
 
-      if (existingLog && existingLog.status === 'completed') {
-        return {
-          ok: true,
-          streakAfter: existingLog.streak_after,
-          bestStreakAfter: user.best_streak,
-          score: existingLog.score,
-          levelAfter: existingLog.level_after,
-          zoneAfter: existingLog.zone
-        };
-      }
+    // ==================== FETCH USER DATA ====================
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
 
-      // Calculate score (simple formula for now)
-      const completedAtLocal = new Date(input.completedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-      const finalScore = input.tasksCompleted === input.tasksTotal ? 100 : input.tasksCompleted * 20;
-      const scoreResult = {
-        tasksCompleted: input.tasksCompleted,
-        tasksTotal: input.tasksTotal,
-        completedAtLocal,
-        finalScore,
-        bonus: input.tasksCompleted === input.tasksTotal ? 20 : 0
-      };
+    if (userError || !user) {
+      throw new Error(`User not found: ${userError?.message || 'Unknown error'}`);
+    }
 
-      // Calculate streak
-      const yesterday = new Date(dateId);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayId = yesterday.toISOString().split('T')[0];
+    // ==================== IDEMPOTENCY CHECK ====================
+    const { data: existingLog } = await supabase
+      .from('daily_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('date_id', dateId)
+      .single();
 
-      const { data: yesterdayLog } = await supabase
-        .from('daily_logs')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('date_id', yesterdayId)
-        .single();
-
-      const yesterdayCompleted = yesterdayLog?.status === 'completed';
-      const newStreak = yesterdayCompleted ? (user.current_streak || 0) + 1 : 1;
-      const newBestStreak = Math.max(user.best_streak || 0, newStreak);
-
-      // Create daily log
-      const { data: newLog, error: logError } = await supabase
-        .from('daily_logs')
-        .insert([{
-          user_id: userId,
-          date_id: dateId,
-          status: 'completed',
-          tasks_total: input.tasksTotal,
-          tasks_completed: input.tasksCompleted,
-          tasks_snapshot: input.tasksSnapshot,
-          completed_at: input.completedAt,
-          completed_at_local: completedAtLocal,
-          score: scoreResult,
-          streak_after: newStreak,
-          level_after: 1,
-          zone: 'active',
-          coach: { available: false, state: 'new' }
-        }])
-        .select()
-        .single();
-
-      if (logError) throw logError;
-
-      // Update user
-      const completedDays = user.completed_days || [];
-      if (!completedDays.includes(dateId)) {
-        completedDays.push(dateId);
-      }
-
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          current_streak: newStreak,
-          best_streak: newBestStreak,
-          total_score: (user.total_score || 0) + finalScore,
-          completed_days: completedDays,
-          last_active_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-
-      if (updateError) throw updateError;
-
+    if (existingLog?.status === 'completed') {
+      console.log(`[${operationId}] Day already completed (idempotent)`);
       return {
         ok: true,
-        streakAfter: newStreak,
-        bestStreakAfter: newBestStreak,
-        score: scoreResult,
-        levelAfter: 1,
-        zoneAfter: 'active'
+        streakAfter: existingLog.streak_after,
+        bestStreakAfter: user.best_streak,
+        score: existingLog.score,
+        levelAfter: existingLog.level_after,
+        zoneAfter: existingLog.zone
       };
-    } catch (error) {
-      console.error('completeDaySupabase error:', error);
-      throw error;
     }
+
+    // ==================== CALCULATE SCORE ====================
+    const completedAtLocal = new Date(input.completedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    const allTasksCompleted = input.tasksCompleted === input.tasksTotal;
+    const finalScore = allTasksCompleted ? 120 : input.tasksCompleted * 20;
+    
+    const scoreResult = {
+      tasksCompleted: input.tasksCompleted,
+      tasksTotal: input.tasksTotal,
+      completedAtLocal,
+      finalScore,
+      bonus: allTasksCompleted ? 20 : 0
+    };
+
+    console.log(`[${operationId}] Score calculated: ${finalScore}`);
+
+    // ==================== CALCULATE STREAK ====================
+    const yesterday = new Date(dateId);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayId = yesterday.toISOString().split('T')[0];
+
+    const { data: yesterdayLog } = await supabase
+      .from('daily_logs')
+      .select('status')
+      .eq('user_id', userId)
+      .eq('date_id', yesterdayId)
+      .single();
+
+    const yesterdayCompleted = yesterdayLog?.status === 'completed';
+    const newStreak = yesterdayCompleted ? (user.current_streak || 0) + 1 : 1;
+    const newBestStreak = Math.max(user.best_streak || 0, newStreak);
+
+    console.log(`[${operationId}] Streak calculated: ${newStreak} (best: ${newBestStreak})`);
+
+    // ==================== ATOMIC TRANSACTION ====================
+    const { data: newLog, error: logError } = await supabase
+      .from('daily_logs')
+      .insert([{
+        user_id: userId,
+        date_id: dateId,
+        status: 'completed',
+        tasks_total: input.tasksTotal,
+        tasks_completed: input.tasksCompleted,
+        tasks_snapshot: input.tasksSnapshot,
+        completed_at: input.completedAt,
+        completed_at_local: completedAtLocal,
+        score: scoreResult,
+        streak_after: newStreak,
+        level_after: 1,
+        zone: 'active',
+        coach: { available: false, state: 'new' }
+      }])
+      .select()
+      .single();
+
+    if (logError || !newLog) {
+      throw new Error(`Failed to create daily log: ${logError?.message || 'Unknown error'}`);
+    }
+
+    console.log(`[${operationId}] Daily log created`);
+
+    // UPDATE USER - Must succeed or rollback
+    const completedDays = [...(user.completed_days || [])];
+    if (!completedDays.includes(dateId)) {
+      completedDays.push(dateId);
+    }
+
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        current_streak: newStreak,
+        best_streak: newBestStreak,
+        total_score: (user.total_score || 0) + finalScore,
+        completed_days: completedDays,
+        last_active_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error(`[${operationId}] User update failed, attempting rollback...`);
+      await supabase.from('daily_logs').delete().eq('id', newLog.id);
+      throw new Error(`Failed to update user: ${updateError.message}`);
+    }
+
+    console.log(`[${operationId}] User updated successfully`);
+
+    const duration = Date.now() - startTime;
+    console.log(`[${operationId}] Transaction completed in ${duration}ms`);
+
+    return {
+      ok: true,
+      streakAfter: newStreak,
+      bestStreakAfter: newBestStreak,
+      score: scoreResult,
+      levelAfter: 1,
+      zoneAfter: 'active'
+    };
+
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`[${operationId}] Transaction FAILED after ${duration}ms:`, error.message);
+    console.error({
+      operationId,
+      userId,
+      dateId,
+      errorMessage: error.message,
+      duration
+    });
+    throw error;
   }
+}
 }
 const supabaseService = new SupabaseService();
 

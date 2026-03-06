@@ -358,6 +358,8 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
   const [soundEnabled, setSoundEnabled] = React.useState(true);
   const [darkModeOverride, setDarkModeOverride] = React.useState(null);
+  const [resetEmail, setResetEmail] = React.useState('');
+  const [resetSent, setResetSent] = React.useState(false);
 
   const isDark = darkModeOverride !== null ? darkModeOverride : systemColorScheme === 'dark';
   const theme = isDark ? THEMES.dark : THEMES.light;
@@ -556,6 +558,62 @@ export default function App() {
     );
   }
   
+// ==================== FORGOT PASSWORD ====================
+if (authMode === 'forgot-password') {
+  
+  const handleForgotPassword = async () => {
+    setErrorMessage('');
+    if (!resetEmail) {
+      setErrorMessage('Ingresa tu email');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail);
+      if (error) throw error;
+      setResetSent(true);
+    } catch (e) {
+      setErrorMessage(e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.authContainer}>
+        <View style={styles.authFormWrapper}>
+          <Text style={styles.authTitle}>Recuperar Contraseña</Text>
+          <Text style={styles.authSubtitle}>Te enviaremos un link para resetear tu contraseña</Text>
+          
+          {resetSent ? (
+            <>
+              <View style={styles.confirmationBox}>
+                <Text style={styles.confirmationText}>📧 Hemos enviado un link de recuperación a {resetEmail}</Text>
+                <Text style={styles.confirmationSubtext}>Revisa tu email y haz click en el link para resetear tu contraseña.</Text>
+              </View>
+              <TouchableOpacity style={styles.authButton} onPress={() => { setAuthMode('login'); setResetEmail(''); setResetSent(false); setErrorMessage(''); }}>
+                <Text style={styles.authButtonText}>Volver a Iniciar Sesión</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              {errorMessage ? <View style={styles.errorBox}><Text style={styles.errorText}>❌ {errorMessage}</Text></View> : null}
+              <TextInput style={styles.input} placeholder="Tu email" value={resetEmail} onChangeText={setResetEmail} placeholderTextColor={theme.textPlaceholder} keyboardType="email-address" />
+              <TouchableOpacity style={[styles.authButton, isLoading && styles.authButtonDisabled]} onPress={handleForgotPassword} disabled={isLoading}>
+                <Text style={styles.authButtonText}>{isLoading ? 'Enviando...' : 'Enviar Link de Recuperación'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setAuthMode('login'); setResetEmail(''); setErrorMessage(''); }}>
+                <Text style={styles.toggleAuthText}>Volver a Iniciar Sesión</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
   // ==================== AUTH ====================
   if (!user) {
     return (
@@ -575,6 +633,11 @@ export default function App() {
             <TouchableOpacity onPress={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setFormData({name:'',email:'',password:'',confirmPassword:''}); setErrorMessage(''); }}>
               <Text style={styles.toggleAuthText}>{authMode === 'login' ? '¿No tienes cuenta? Registrate aquí' : '¿Ya tienes cuenta? Inicia sesión'}</Text>
             </TouchableOpacity>
+            {authMode === 'login' && (
+  <TouchableOpacity onPress={() => setAuthMode('forgot-password')}>
+    <Text style={styles.toggleAuthText}>¿Olvidaste tu contraseña?</Text>
+  </TouchableOpacity>
+)}
           </View>
         </View>
       </ScrollView>

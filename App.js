@@ -321,9 +321,63 @@ class CoachService {
   }
 
   async generateCoachMessage(userName, streak, bestStreak, monthlyCompletion, context = 'daily') {
+  try {
+    const apiKey = process.env.REACT_APP_ANTHROPIC_API_KEY;
+    
+    if (!apiKey) {
+      console.error('Anthropic API key not found');
+      return this.getFallbackMessage(userName, streak, context);
+    }
+
+    const prompt = `Eres un coach de disciplina matutina motivador y directo. 
+El usuario ${userName} acaba de completar su rutina matutina.
+
+Datos:
+- Racha actual: ${streak} días
+- Mejor racha: ${bestStreak} días
+- Completitud mensual: ${monthlyCompletion}%
+
+Genera UN SOLO mensaje motivacional corto (máx 2 líneas) que sea:
+- Personalizado con el nombre del usuario
+- Celebre su logro
+- Use emojis
+- Sea directo y poderoso
+
+Responde SOLO el mensaje, sin explicaciones.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-5-20251101',
+        max_tokens: 150,
+        messages: [
+          { role: 'user', content: prompt }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const message = data.content[0].text;
+    
+    console.log('[CoachService] Generated message:', message);
+    return message;
+
+  } catch (error) {
+    console.error('[CoachService] Error generating message:', error);
     return this.getFallbackMessage(userName, streak, context);
   }
 }
+}
+
 const coachService = new CoachService();
 
 export default function App() {
@@ -472,9 +526,21 @@ export default function App() {
           });
         }
 
-        setCoachMessage(`¡${user.name}! 🔥 ¡LO HICISTE! Racha de ${response.streakAfter} días. Eres IMPARABLE.`);
-        setCurrentScreen('coach');
-        setCoachScreenVisible(true);
+        // Generate coach message
+setCoachLoading(true);
+const monthlyStats = getMonthlyStats();
+const coachMsg = await coachService.generateCoachMessage(
+  user.name,
+  response.streakAfter,
+  response.bestStreakAfter,
+  monthlyStats.percentage,
+  'celebration'
+);
+setCoachMessage(coachMsg);
+setCoachLoading(false);
+setCurrentScreen('coach');
+setCoachScreenVisible(true);
+
       }
     } catch (error) {
       console.error('handleComplete error:', error);
